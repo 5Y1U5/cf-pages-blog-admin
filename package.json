@@ -1,0 +1,89 @@
+{
+  "name": "@5y1u5/cf-pages-blog-admin",
+  "version": "1.0.0",
+  "description": "Blog admin console for Cloudflare Pages Functions + D1 + R2, publishing Markdown through the GitHub Contents API.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/5Y1U5/cf-pages-blog-admin.git"
+  },
+  "files": [
+    "dist",
+    "migrations",
+    "templates",
+    "bin"
+  ],
+  "bin": {
+    "cf-pages-blog-admin": "bin/cf-pages-blog-admin.mjs"
+  },
+  "exports": {
+    "./config": {
+      "types": "./dist/config/index.d.ts",
+      "default": "./dist/config/index.js"
+    },
+    "./config/env": {
+      "types": "./dist/config/env.d.ts",
+      "default": "./dist/config/env.js"
+    },
+    "./ui": {
+      "types": "./dist/ui/index.d.ts",
+      "default": "./dist/ui/index.js"
+    },
+    "./server/handlers/*": {
+      "types": "./dist/server/handlers/*.d.ts",
+      "default": "./dist/server/handlers/*.js"
+    },
+    "./server/shared/*": {
+      "types": "./dist/server/_shared/*.d.ts",
+      "default": "./dist/server/_shared/*.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.server.json && tsc -p tsconfig.ui.json",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.ui.json --noEmit",
+    "check:safe": "node scripts/check-public-safe.mjs",
+    "check:classnames": "node scripts/check-classnames.mjs",
+    "check": "npm run typecheck && npm run check:safe && npm run check:classnames && npm run build",
+    "preversion": "npm run check",
+    "version": "npm run build && git add dist",
+    "postversion": "git push --follow-tags"
+  },
+  "dependencies": {
+    "@tiptap/extension-image": "^3.29.2",
+    "@tiptap/pm": "^3.29.2",
+    "@tiptap/react": "^3.29.2",
+    "@tiptap/starter-kit": "^3.29.2",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.6.0",
+    "marked": "^18.0.9",
+    "tailwind-merge": "^3.5.0",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2"
+  },
+  "peerDependencies": {
+    "react": ">=19",
+    "react-dom": ">=19"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260509.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/turndown": "^5.0.6",
+    "typescript": "^5"
+  },
+  "keywords": [
+    "cloudflare-pages",
+    "cloudflare-d1",
+    "cloudflare-r2",
+    "blog",
+    "admin",
+    "cms",
+    "markdown"
+  ]
+}

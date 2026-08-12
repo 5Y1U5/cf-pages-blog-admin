@@ -1,0 +1,9 @@
+{
+  "// 注意": "ビルドと型検査は tsconfig.server.json / tsconfig.ui.json の2本で行う。Cloudflare Workers の型と DOM の型は同じプログラムに同居できないため、1本にまとめられない。このファイルはエディタが src/ui と src/config を開いたときのための既定値。",
+  "extends": "./tsconfig.ui.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src/ui", "src/config"],
+  "exclude": ["src/config/env.ts"]
+}

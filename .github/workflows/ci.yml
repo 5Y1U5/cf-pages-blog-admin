@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+
+      - name: 型検査
+        run: npm run typecheck
+
+      - name: 公開前チェック
+        run: npm run check:safe
+
+      - name: クラス名チェック
+        run: npm run check:classnames
+
+      - name: dist がソースと一致しているか
+        run: |
+          npm run build
+          git diff --exit-code -- dist || {
+            echo "::error::dist が src と一致していません。npm run build してコミットしてください。"
+            exit 1
+          }
+
+      - name: ビルド成果物の検証
+        run: node scripts/verify-dist.mjs
+
+      - name: package.json の version とタグの一致
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::タグ v$TAG と package.json の $VERSION が食い違っています。"
+            exit 1
+          fi
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+
+      - name: Pages Functions として組み上がるか
+        run: node scripts/integration-test.mjs

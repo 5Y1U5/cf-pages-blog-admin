@@ -1,0 +1,6 @@
+# dist はコミットする（git 依存でそのまま install できるようにするため）
+node_modules/
+*.tgz
+*.log
+.DS_Store
+.tsbuildinfo

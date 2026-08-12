@@ -1,5 +1,6 @@
 // client/src/components/admin/router-adapter.tsx に置く
-import { Link as WouterLink, navigate } from "wouter/use-browser-location";
+import { Link as WouterLink } from "wouter";
+import { navigate } from "wouter/use-browser-location";
 import type { AdminRouter } from "@5y1u5/cf-pages-blog-admin/ui";
 
 export const adminRouter: AdminRouter = {

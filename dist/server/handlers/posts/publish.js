@@ -1,4 +1,4 @@
-import { postFilePath, publicPostUrl, } from "../../../config/index.js";
+import { postFilePath, publicPostUrl, resolveDefaultCategory, } from "../../../config/index.js";
 import { badRequest, json, nowIso, requireDb, requireUser } from "../../_shared/admin.js";
 import { upsertGitHubFile } from "../../_shared/github.js";
 import { CATEGORY_SELECT, categoryRowsToJson, deriveExcerpt, draftToMarkdown, } from "../../_shared/posts.js";
@@ -77,12 +77,10 @@ export function createPublishHandlers(config) {
             .all();
         const categoryRows = categories.results || [];
         // --- 未入力項目の自動補完 ---
-        // 既定カテゴリは preferredSlugs の順に探し、無ければ登録済みの先頭、それも無ければ設定値。
-        const preferredCategory = config.category.preferredSlugs
-            .map((slug) => categoryRows.find((category) => category.slug === slug))
-            .find((category) => Boolean(category)) ||
-            categoryRows[0] ||
-            null;
+        // 既定カテゴリの選び方は画面側の初期選択と共通（preferredSlugs → defaultSlug → 先頭）。
+        // 削除済み（is_active = 0）は候補から外す。画面のカテゴリ一覧も有効なものしか返さないため、
+        // ここで拾うと「画面に出ていないカテゴリで公開される」ことになる。
+        const preferredCategory = resolveDefaultCategory(config, categoryRows.filter((category) => category.is_active === 1));
         const categorySlug = post.category_slug || preferredCategory?.slug || config.category.defaultSlug;
         const categoryLabel = post.category_label || preferredCategory?.label || config.category.defaultLabel;
         const today = todayInConfiguredZone(config);

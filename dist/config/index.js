@@ -65,6 +65,42 @@ export function defineBlogAdminConfig(input) {
         permissions: { ...DEFAULT_PERMISSIONS, ...(input.permissions ?? {}) },
     };
 }
+/**
+ * 保存時にサーバーが自動で値を決める項目。
+ *
+ * `slug` は新規保存（POST /api/admin/posts）の時点でサーバーが必ず埋める。
+ * タイトルから作れない（日本語のみ等）場合は `post-<日付>-<乱数>` を採番し、
+ * 既存と衝突する場合は連番を付ける。したがってクライアントの入力欄が空でも、
+ * DB に入る時点では必ず値がある。
+ *
+ * `requiredFields` にこれらが入っていても、画面側の未入力判定からは除外する。
+ * 除外しないと、日本語タイトルの新規記事で公開ボタンが押せないまま詰む
+ * （保存すれば埋まるのに、保存前は空なので未入力と判定されてしまう）。
+ * サーバー側の検証はそのまま残るので、必須指定そのものは効いている。
+ */
+export const SERVER_ASSIGNED_FIELDS = ["slug"];
+/** 画面側で未入力を判定する項目。サーバーが自動で埋めるものを除いた `requiredFields`。 */
+export function clientPublishRequirements(config) {
+    return config.publish.requiredFields.filter((field) => !SERVER_ASSIGNED_FIELDS.includes(field));
+}
+/**
+ * 登録済みカテゴリから既定カテゴリを選ぶ。
+ *
+ * 探索順は `preferredSlugs` の並び → `defaultSlug` → 登録順の先頭。
+ * 該当が無ければ null（呼び出し側が `defaultSlug` / `defaultLabel` で新規に振る）。
+ *
+ * 新規記事の初期選択（画面）と公開時の自動補完（サーバー）が食い違わないよう、
+ * 判定はこの1か所に置く。
+ */
+export function resolveDefaultCategory(config, categories) {
+    const bySlug = (slug) => categories.find((category) => category.slug === slug) ?? null;
+    for (const slug of config.category.preferredSlugs) {
+        const preferred = bySlug(slug);
+        if (preferred)
+            return preferred;
+    }
+    return bySlug(config.category.defaultSlug) ?? categories[0] ?? null;
+}
 /** 記事ファイルのパスを組み立てる（`postsDir/<slug>.md`）。 */
 export function postFilePath(config, slug) {
     return `${config.content.postsDir.replace(/\/+$/, "")}/${slug}.md`;

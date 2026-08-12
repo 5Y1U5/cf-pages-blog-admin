@@ -28,7 +28,7 @@ Cloudflare Pages + D1 + R2 で動く、日本語向けのブログ管理画面�
 npm レジストリには publish していない。public リポジトリの git 依存として入れる。認証は不要。
 
 ```
-npm i "github:5Y1U5/cf-pages-blog-admin#v1.0.1"
+npm i "github:5Y1U5/cf-pages-blog-admin#v1.0.2"
 ```
 
 ## 使い方
@@ -122,13 +122,13 @@ export default function Page() {
 | `content.heroImageKey` | `"heroImage"` | frontmatter のアイキャッチキー |
 | `content.defaultHeroImage` | `null` | 本文にも指定にも画像が無いときの既定アイキャッチ。`null` なら出さない |
 | `content.categoriesJsonPath` | `"content/blog-categories.json"` | カテゴリ一覧の書き出し先 |
-| `category.defaultSlug` | `"news"` | カテゴリ未指定時の slug |
-| `category.defaultLabel` | `"お知らせ"` | カテゴリ未指定時の表示名 |
+| `category.defaultSlug` | `"news"` | 既定カテゴリの slug |
+| `category.defaultLabel` | `"お知らせ"` | 既定カテゴリの表示名 |
 | `category.preferredSlugs` | `["news"]` | 既定カテゴリの探索順 |
 | `publish.requiredFields` | `["title","body"]` | 公開に必須の項目 |
 | `publish.timezoneOffsetMinutes` | `540` | 公開日の基準タイムゾーン（分） |
 | `publish.blockFutureDate` | `true` | 未来日での公開を拒否するか |
-| `publish.publicPathPrefix` | `"/blog"` | 公開 URL の接頭辞 |
+| `publish.publicPathPrefix` | `"/blog"` | 公開 URL の接頭辞。**サイトの実際の記事 URL に合わせる** |
 | `github.owner` / `repo` / `branch` | `""` / `""` / `"main"` | 公開先。環境変数が設定されていればそちらが優先される |
 | `permissions.deletePost` | `["admin"]` | 記事の物理削除を許可するロール |
 
@@ -142,6 +142,53 @@ export default function Page() {
 
 設定項目の追加漏れは、導入側の `tsc --noEmit -p functions/tsconfig.json` が検出する。
 CI に必ず入れておくこと。
+
+### 公開 URL の接頭辞（`publish.publicPathPrefix`）
+
+公開 URL は `<publicPathPrefix>/<slug>` として組み立てられ、次の3か所に出る。
+
+- 公開後に管理画面が表示する「公開したページ」へのリンク
+- 記事一覧の「サイトで見る」リンク
+- 記事削除の確認ダイアログの文言（「この URL が 404 になります」の URL）
+
+**サイトの実際の記事 URL に合わせて必ず設定する。** 既定は `/blog` なので、
+記事を `/post/<slug>/` で配信しているサイトで既定のままにすると、
+削除確認ダイアログに存在しない URL が出て、利用者が「別の記事を消そうとしている」と誤解する。
+
+```ts
+publish: {
+  publicPathPrefix: "/post",   // → /post/<slug>
+},
+```
+
+DB に保存済みの `published_url` があるときはそちらを優先して表示するため、
+設定を直したあとに再公開した記事から順に正しい URL になる。
+
+### 既定カテゴリの決まり方
+
+新規記事を開いたときの初期選択と、公開時にカテゴリ未指定だった場合の自動補完は、
+同じ順序で決まる。
+
+1. `category.preferredSlugs` の並び順に、登録済みカテゴリから探す
+2. 見つからなければ `category.defaultSlug` と一致する登録済みカテゴリ
+3. それも無ければ登録順の先頭
+4. カテゴリが1件も無ければ `defaultSlug` / `defaultLabel` を振る（公開時のみ）
+
+登録順の先頭が既定になるわけではない。ほぼ毎日「お知らせ」を書くサイトで、
+先に登録されたカテゴリが「ブログ」だとしても、`preferredSlugs: ["news"]` なら
+新規記事の初期選択は「お知らせ」になる。
+
+### `requiredFields` と slug
+
+`publish.requiredFields` はサーバー側の公開処理が検証する。
+ただし **`slug` は画面側の未入力判定からは除外される**。
+
+新規記事の slug はサーバーが保存時に必ず埋めるためで、タイトルから作れない場合
+（日本語だけのタイトルなど）は `post-<日付>-<乱数>` を採番し、既存と衝突する場合は連番を付ける。
+画面側で空欄を「未入力」と扱うと、日本語タイトルの新規記事で公開ボタンが押せないまま詰む。
+
+`requiredFields` に `slug` を入れる指定自体は有効で、サーバー側の検証はそのまま働く。
+未保存の新規記事でも公開ボタンは押せて、押すと保存してから公開が走る。
 
 ## パスワードの扱い（設計上の性質）
 

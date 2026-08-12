@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, ChevronDown, Eye, EyeOff, ImagePlus, Loader2, Plus, Save, Send, Trash2, } from "lucide-react";
-import { canEditContent, publicPostUrl } from "../config/index.js";
+import { canEditContent, clientPublishRequirements, publicPostUrl, resolveDefaultCategory, } from "../config/index.js";
 import { AdminLogoutButton } from "./AdminLogoutButton.js";
 import { RichTextEditor } from "./RichTextEditor.js";
 import { MAX_UPLOAD_BYTES, formatBytes, prepareImageForUpload, translateUploadError, } from "./lib/admin-image.js";
@@ -188,7 +188,9 @@ export function AdminEditorClient({ config, router }) {
     const previewBlocks = useMemo(() => markdownPreview(bodyMarkdown), [bodyMarkdown]);
     // 公開ボタンが押せない理由。location は「その項目が詳細設定の中にあるか」を表す。
     // 詳細設定は折りたたまれているため、中の項目が不足しているときは自動で開く必要がある。
-    const missingFieldEntries = config.publish.requiredFields
+    // slug のようにサーバーが保存時に採番する項目は判定に含めない（clientPublishRequirements）。
+    // 含めると、日本語タイトルの新規記事で公開ボタンが永久に押せなくなる。
+    const missingFieldEntries = clientPublishRequirements(config)
         .filter((field) => {
         switch (field) {
             case "title":
@@ -224,6 +226,25 @@ export function AdminEditorClient({ config, router }) {
         setEditorMode(next);
         window.localStorage.setItem(EDITOR_MODE_STORAGE_KEY, next);
     }
+    // カテゴリの初期選択。設定の既定カテゴリ（preferredSlugs → defaultSlug → 登録順の先頭）を選ぶ。
+    // 公開時にサーバーが自動補完するのと同じ順序なので、初期選択と公開結果が食い違わない。
+    //
+    // 記事の読み込み後（新規記事は最初から isLoading=false）に一度だけ走らせる。
+    // 一度きりにするのは、利用者がカテゴリを未選択に戻したときに勝手に選び直さないため。
+    const categoryPresetDoneRef = useRef(false);
+    useEffect(() => {
+        if (categoryPresetDoneRef.current || isLoading || categories.length === 0)
+            return;
+        categoryPresetDoneRef.current = true;
+        if (categorySlug)
+            return;
+        const preset = resolveDefaultCategory(config, categories);
+        if (!preset)
+            return;
+        setCategorySlug(preset.slug);
+        setCategoryLabel(preset.label);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [categories, categorySlug, isLoading]);
     // 詳細設定の中に未入力があるまま閉じていると気づけないので、開いた状態にする。
     // 一度自分で閉じた場合まで強制しないよう、開く方向にだけ作用させる。
     useEffect(() => {
@@ -260,12 +281,9 @@ export function AdminEditorClient({ config, router }) {
             return;
         }
         const data = (await res.json());
-        const nextCategories = data.categories || [];
-        setCategories(nextCategories);
-        if (!categorySlug && nextCategories[0]) {
-            setCategorySlug(nextCategories[0].slug);
-            setCategoryLabel(nextCategories[0].label);
-        }
+        setCategories(data.categories || []);
+        // 初期選択はここでは行わない。記事の読み込みと並行して走るため、
+        // 先に読み込んだ記事のカテゴリを上書きしてしまう。下の useEffect に任せる。
     }
     async function loadPost(id) {
         const res = await fetch(postApi(id), { cache: "no-store" });
@@ -608,9 +626,12 @@ function publishButtonTitle(canEdit, canPublish, missingFields) {
         return "公開する";
     return `公開には次の入力が必要です：${missingFields.join("・")}`;
 }
-/** 案内文に出す「公開に必要な項目」の並び。設定の requiredFields をそのまま日本語にする。 */
+/**
+ * 案内文に出す「公開に必要な項目」の並び。
+ * 利用者が自分で入力する項目だけを出す（サーバーが自動採番する slug は出さない）。
+ */
 function missingRequirementNames(config) {
-    return config.publish.requiredFields
+    return clientPublishRequirements(config)
         .map((field) => REQUIREMENT_LABELS[field] || field)
         .join("」「");
 }

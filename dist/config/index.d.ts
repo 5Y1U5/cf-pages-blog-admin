@@ -8,6 +8,20 @@
  */
 /** 管理画面のロール。値は D1 の users.role の CHECK 制約と一致させること。 */
 export type AdminRole = "admin" | "client_publisher" | "client_viewer";
+/**
+ * 記事の作成・保存・公開・画像アップロード・カテゴリ追加ができるロール。
+ * サーバー側ハンドラの RBAC と同じ並びにしてあり、片方だけ変えてはいけない。
+ * `client_viewer` は閲覧専用で、これらの操作はすべて 403 になる。
+ */
+export declare const CONTENT_EDITOR_ROLES: AdminRole[];
+/**
+ * 編集操作のボタンを出してよいかを判定する。
+ *
+ * `role` が null（`/api/admin/me` の応答待ち、または取得に失敗した状態）のあいだは
+ * true を返す。読み込みのたびに全ボタンが一瞬押せなくなるのを避けるためで、
+ * 権限の最終判断はサーバー側の RBAC が持つ。
+ */
+export declare function canEditContent(role: AdminRole | null): boolean;
 /** 公開時に入力を必須にできる項目。 */
 export type PublishRequirement = "title" | "body" | "slug" | "date" | "category";
 export interface BlogAdminContentConfig {

@@ -1,4 +1,4 @@
-import { badRequest, isValidSlug, json, normalizeString, nowIso, randomId, readJson, requireDb, requireUser, } from "../../_shared/admin.js";
+import { badRequest, isValidSlug, json, normalizeString, nowIso, randomId, readJson, requireDb, requireUser, serverError, } from "../../_shared/admin.js";
 export function createCategoriesHandlers(config) {
     const onRequestGet = async (ctx) => {
         const user = await requireUser(ctx.request, ctx.env, config);
@@ -48,7 +48,10 @@ export function createCategoriesHandlers(config) {
         }
         const now = nowIso();
         const id = randomId("cat");
-        await db
+        // ON CONFLICT で既存行を更新したときに DB に残るのは既存行の id で、いま採番した id ではない。
+        // 採番した方を返すと、画面のカテゴリ一覧に実在しない id が積まれ、
+        // 追加直後にその項目を削除しようとしても効かなくなる。RETURNING で実際の行を返す。
+        const row = await db
             .prepare(`INSERT INTO categories
          (id, client_id, code, slug, label, description, is_active, created_by, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
@@ -56,10 +59,13 @@ export function createCategoriesHandlers(config) {
            label = excluded.label,
            description = excluded.description,
            is_active = 1,
-           updated_at = excluded.updated_at`)
+           updated_at = excluded.updated_at
+         RETURNING id, code, slug, label, description`)
             .bind(id, user.client_id, slug, slug, label, description || null, user.id, now, now)
-            .run();
-        return json({ ok: true, category: { id, slug, label, description } });
+            .first();
+        if (!row)
+            return serverError("カテゴリを保存できませんでした。");
+        return json({ ok: true, category: row });
     };
     return { onRequestGet, onRequestPost };
 }

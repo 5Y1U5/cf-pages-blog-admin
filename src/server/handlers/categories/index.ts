@@ -10,6 +10,7 @@ import {
   readJson,
   requireDb,
   requireUser,
+  serverError,
 } from "../../_shared/admin.js";
 
 interface CategoryPayload {
@@ -73,7 +74,10 @@ export function createCategoriesHandlers(config: BlogAdminConfig) {
 
     const now = nowIso();
     const id = randomId("cat");
-    await db
+    // ON CONFLICT で既存行を更新したときに DB に残るのは既存行の id で、いま採番した id ではない。
+    // 採番した方を返すと、画面のカテゴリ一覧に実在しない id が積まれ、
+    // 追加直後にその項目を削除しようとしても効かなくなる。RETURNING で実際の行を返す。
+    const row = await db
       .prepare(
         `INSERT INTO categories
          (id, client_id, code, slug, label, description, is_active, created_by, created_at, updated_at)
@@ -82,12 +86,21 @@ export function createCategoriesHandlers(config: BlogAdminConfig) {
            label = excluded.label,
            description = excluded.description,
            is_active = 1,
-           updated_at = excluded.updated_at`
+           updated_at = excluded.updated_at
+         RETURNING id, code, slug, label, description`
       )
       .bind(id, user.client_id, slug, slug, label, description || null, user.id, now, now)
-      .run();
+      .first<{
+        id: string;
+        code: string;
+        slug: string;
+        label: string;
+        description: string | null;
+      }>();
 
-    return json({ ok: true, category: { id, slug, label, description } });
+    if (!row) return serverError("カテゴリを保存できませんでした。");
+
+    return json({ ok: true, category: row });
   };
 
   return { onRequestGet, onRequestPost };

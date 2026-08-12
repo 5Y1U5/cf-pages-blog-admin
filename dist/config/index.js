@@ -6,6 +6,22 @@
  * どちらか一方でしか成立しない型が混ざると、もう一方のビルドが壊れるためである。
  * バインディングの型は ./config/env に分けてある。
  */
+/**
+ * 記事の作成・保存・公開・画像アップロード・カテゴリ追加ができるロール。
+ * サーバー側ハンドラの RBAC と同じ並びにしてあり、片方だけ変えてはいけない。
+ * `client_viewer` は閲覧専用で、これらの操作はすべて 403 になる。
+ */
+export const CONTENT_EDITOR_ROLES = ["admin", "client_publisher"];
+/**
+ * 編集操作のボタンを出してよいかを判定する。
+ *
+ * `role` が null（`/api/admin/me` の応答待ち、または取得に失敗した状態）のあいだは
+ * true を返す。読み込みのたびに全ボタンが一瞬押せなくなるのを避けるためで、
+ * 権限の最終判断はサーバー側の RBAC が持つ。
+ */
+export function canEditContent(role) {
+    return role === null || CONTENT_EDITOR_ROLES.includes(role);
+}
 export const DEFAULT_BRAND_LABEL = "BLOG ADMIN";
 const DEFAULT_CONTENT = {
     postsDir: "content/posts",

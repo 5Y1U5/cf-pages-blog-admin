@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, ChevronDown, Eye, EyeOff, ImagePlus, Loader2, Plus, Save, Send, Trash2, } from "lucide-react";
-import { publicPostUrl } from "../config/index.js";
+import { canEditContent, publicPostUrl } from "../config/index.js";
 import { AdminLogoutButton } from "./AdminLogoutButton.js";
 import { RichTextEditor } from "./RichTextEditor.js";
 import { MAX_UPLOAD_BYTES, formatBytes, prepareImageForUpload, translateUploadError, } from "./lib/admin-image.js";
@@ -110,6 +110,30 @@ function readError(data, fallback) {
     const record = data;
     return typeof record.message === "string" ? record.message : fallback;
 }
+const FORBIDDEN_MESSAGE = "権限がありません。この操作は許可されていません。";
+const VIEWER_NOTICE = "閲覧専用の権限でログインしています。記事の保存・公開・画像アップロードはできません。";
+const VIEWER_BLOCKED = {
+    save: "閲覧専用の権限のため保存できません。",
+    publish: "閲覧専用の権限のため公開できません。",
+    unpublish: "閲覧専用の権限のため公開を取り下げできません。",
+    upload: "閲覧専用の権限のため画像をアップロードできません。",
+    category: "閲覧専用の権限のためカテゴリを追加できません。",
+};
+/**
+ * 失敗したリクエストの文言を決める。
+ * 403 は権限の問題であって入力内容の問題ではないので、必須項目の話にすり替えない
+ * （サーバーの forbidden() は message を持たないため、ここで補う）。
+ */
+function readRequestError(res, data, fallback) {
+    return readError(data, res.status === 403 ? FORBIDDEN_MESSAGE : fallback);
+}
+/** サーバーが返した公開 URL。返っていなければ null。 */
+function readPublishedUrl(data) {
+    if (typeof data !== "object" || data === null)
+        return null;
+    const value = data.publishedUrl;
+    return typeof value === "string" && value ? value : null;
+}
 const REQUIREMENT_LABELS = {
     title: "タイトル",
     body: "本文",
@@ -158,6 +182,9 @@ export function AdminEditorClient({ config, router }) {
     const [newCategorySlug, setNewCategorySlug] = useState("");
     const [newCategoryLabel, setNewCategoryLabel] = useState("");
     const isAdmin = role === "admin";
+    // 編集・公開できるのは admin / client_publisher のみ（client_viewer は閲覧専用）。
+    // サーバー側 RBAC と一致させ、403 になる操作を押せないようにする。
+    const canEdit = canEditContent(role);
     const previewBlocks = useMemo(() => markdownPreview(bodyMarkdown), [bodyMarkdown]);
     // 公開ボタンが押せない理由。location は「その項目が詳細設定の中にあるか」を表す。
     // 詳細設定は折りたたまれているため、中の項目が不足しているときは自動で開く必要がある。
@@ -200,9 +227,9 @@ export function AdminEditorClient({ config, router }) {
     // 詳細設定の中に未入力があるまま閉じていると気づけないので、開いた状態にする。
     // 一度自分で閉じた場合まで強制しないよう、開く方向にだけ作用させる。
     useEffect(() => {
-        if (hasMissingInAdvanced)
+        if (canEdit && hasMissingInAdvanced)
             setShowAdvanced(true);
-    }, [hasMissingInAdvanced]);
+    }, [canEdit, hasMissingInAdvanced]);
     function applyPost(post) {
         setPostId(post.id);
         setTitle(post.title || "");
@@ -294,6 +321,10 @@ export function AdminEditorClient({ config, router }) {
         };
     }
     async function save(nextStatus = "draft") {
+        if (!canEdit) {
+            setMessage(VIEWER_BLOCKED.save);
+            return null;
+        }
         setIsSaving(true);
         setMessage("");
         const payload = buildPayload(nextStatus);
@@ -309,7 +340,7 @@ export function AdminEditorClient({ config, router }) {
             return null;
         }
         if (!res.ok) {
-            setMessage(readError(data, "保存できませんでした。必須項目を確認してください。"));
+            setMessage(readRequestError(res, data, "保存できませんでした。必須項目を確認してください。"));
             return null;
         }
         if (!postId && typeof data === "object" && data !== null) {
@@ -329,6 +360,10 @@ export function AdminEditorClient({ config, router }) {
                 : null));
     }
     async function publish() {
+        if (!canEdit) {
+            setMessage(VIEWER_BLOCKED.publish);
+            return;
+        }
         const savedId = await save("approved");
         if (!savedId)
             return;
@@ -342,16 +377,23 @@ export function AdminEditorClient({ config, router }) {
             return;
         }
         if (!res.ok) {
-            setMessage(readError(data, "公開できませんでした。必須項目を確認してください。"));
+            setMessage(readRequestError(res, data, "公開できませんでした。必須項目を確認してください。"));
             return;
         }
         setStatus("publishing");
-        setPublishedUrl(publicPostUrl(config, slug));
+        // 公開 URL はサーバーが返す publishedUrl を優先する。新規記事で slug がサーバー側で
+        // 連番化された場合、setState は非同期なのでクライアントの slug は古く、
+        // 組み立て直すと実際の公開先とずれる。
+        setPublishedUrl(readPublishedUrl(data) ?? publicPostUrl(config, slug));
         setMessage("公開を受け付けました。数分後にサイトへ反映されます。");
     }
     async function unpublish() {
         if (!postId)
             return;
+        if (!canEdit) {
+            setMessage(VIEWER_BLOCKED.unpublish);
+            return;
+        }
         setIsUnpublishing(true);
         setMessage("公開取り下げを開始しています...");
         const res = await fetch(`${postApi(postId)}/unpublish`, { method: "POST" });
@@ -362,7 +404,7 @@ export function AdminEditorClient({ config, router }) {
             return;
         }
         if (!res.ok) {
-            setMessage(readError(data, "公開を取り下げできませんでした。時間をおいて再度お試しください。"));
+            setMessage(readRequestError(res, data, "公開を取り下げできませんでした。時間をおいて再度お試しください。"));
             return;
         }
         setStatus("draft");
@@ -384,6 +426,10 @@ export function AdminEditorClient({ config, router }) {
         });
     }
     async function uploadImage(file, target) {
+        if (!canEdit) {
+            setMessage(VIEWER_BLOCKED.upload);
+            return;
+        }
         setIsUploading(true);
         setMessage("写真を最適化しています…");
         // そのまま送らず、長辺1600px・WebP へ縮小してから送る
@@ -416,6 +462,10 @@ export function AdminEditorClient({ config, router }) {
             location.href = ADMIN_PATHS.login;
             return;
         }
+        if (res.status === 403) {
+            setMessage(FORBIDDEN_MESSAGE);
+            return;
+        }
         if (!res.ok || !data.asset?.publicPath) {
             setMessage(translateUploadError(data.message));
             return;
@@ -440,6 +490,10 @@ export function AdminEditorClient({ config, router }) {
         setMessage(`画像を本文へ挿入しました。${optimizedNote}`);
     }
     async function addCategory() {
+        if (!canEdit) {
+            setMessage(VIEWER_BLOCKED.category);
+            return;
+        }
         const slugValue = newCategorySlug.trim() || slugify(newCategoryLabel);
         if (!slugValue || !newCategoryLabel.trim()) {
             setMessage("新規カテゴリの slug と表示名を入力してください。");
@@ -454,6 +508,10 @@ export function AdminEditorClient({ config, router }) {
         const data = (await res.json().catch(() => ({})));
         if (res.status === 401) {
             location.href = ADMIN_PATHS.login;
+            return;
+        }
+        if (res.status === 403) {
+            setMessage(FORBIDDEN_MESSAGE);
             return;
         }
         if (!res.ok || !data.category) {
@@ -483,6 +541,10 @@ export function AdminEditorClient({ config, router }) {
             location.href = ADMIN_PATHS.login;
             return;
         }
+        if (res.status === 403) {
+            setMessage(FORBIDDEN_MESSAGE);
+            return;
+        }
         if (!res.ok) {
             setMessage(data.message || "カテゴリを削除できませんでした。");
             return;
@@ -495,11 +557,13 @@ export function AdminEditorClient({ config, router }) {
         setMessage("カテゴリを削除しました。");
     }
     const headerStatus = isLoading ? "読み込み中" : statusLabel(status);
-    return (_jsxs("main", { className: "min-h-screen bg-[rgb(247,247,247)] pb-28", children: [_jsx("header", { className: "sticky top-0 z-20 border-b border-border bg-background/95 px-4 py-3 backdrop-blur", children: _jsxs("div", { className: "mx-auto flex max-w-[1180px] items-center justify-between gap-3", children: [_jsxs(Link, { href: ADMIN_PATHS.posts, className: "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border", children: [_jsx(ArrowLeft, { size: 18 }), _jsx("span", { className: "sr-only", children: "\u8A18\u4E8B\u4E00\u89A7\u3078\u623B\u308B" })] }), _jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("p", { className: "truncate text-[13px] font-bold", children: title || "新規記事" }), _jsx("p", { className: "text-[11px] text-foreground/55", children: headerStatus })] }), _jsx(AdminLogoutButton, { className: "h-10 w-10 shrink-0" }), _jsxs("div", { className: "hidden gap-2 md:flex", children: [_jsxs("button", { type: "button", onClick: () => void save("draft"), disabled: isSaving || isLoading || isUnpublishing, className: "flex h-10 items-center gap-2 rounded-lg border border-border px-4 text-[13px] font-bold disabled:opacity-50", children: [isSaving ? _jsx(Loader2, { className: "animate-spin", size: 16 }) : _jsx(Save, { size: 16 }), "\u4FDD\u5B58"] }), canUnpublish && (_jsxs("button", { type: "button", onClick: () => void unpublish(), disabled: isUnpublishing || isPublishing || isSaving, className: "flex h-10 items-center gap-2 rounded-lg border border-border px-4 text-[13px] font-bold text-foreground/75 disabled:opacity-50", children: [isUnpublishing ? (_jsx(Loader2, { className: "animate-spin", size: 16 })) : (_jsx(EyeOff, { size: 16 })), "\u53D6\u308A\u4E0B\u3052"] })), !canPublish && missingFields.length > 0 && (_jsxs("span", { className: "hidden max-w-[260px] text-[11px] leading-tight text-amber-600 md:inline", children: ["\u516C\u958B\u306B\u306F\u672A\u5165\u529B\u3042\u308A\uFF1A", missingFields.join("・")] })), _jsxs("button", { type: "button", onClick: () => void publish(), disabled: !canPublish || isPublishing || isSaving || isUnpublishing, title: canPublish ? "公開する" : `公開には次の入力が必要です：${missingFields.join("・")}`, className: "flex h-10 items-center gap-2 rounded-lg bg-foreground px-4 text-[13px] font-bold text-background disabled:opacity-40", children: [isPublishing ? _jsx(Loader2, { className: "animate-spin", size: 16 }) : _jsx(Send, { size: 16 }), "\u516C\u958B"] })] })] }) }), _jsxs("div", { className: "mx-auto grid max-w-[1180px] gap-5 px-4 py-5 lg:grid-cols-[minmax(0,1fr)_360px]", children: [_jsxs("section", { className: "min-w-0", children: [_jsxs("div", { className: "mb-4 grid grid-cols-2 rounded-lg border border-border bg-background p-1", children: [_jsxs("button", { type: "button", onClick: () => setTab("edit"), className: `flex h-10 items-center justify-center gap-2 rounded-md text-[13px] font-bold ${tab === "edit" ? "bg-foreground text-background" : "text-foreground/70"}`, children: [_jsx(Check, { size: 16 }), "\u7DE8\u96C6"] }), _jsxs("button", { type: "button", onClick: () => setTab("preview"), className: `flex h-10 items-center justify-center gap-2 rounded-md text-[13px] font-bold ${tab === "preview" ? "bg-foreground text-background" : "text-foreground/70"}`, children: [_jsx(Eye, { size: 16 }), "\u30D7\u30EC\u30D3\u30E5\u30FC"] })] }), message ? (_jsx("p", { className: "mb-4 rounded-lg border border-border bg-background p-3 text-[13px]", children: message })) : null, tab === "edit" ? (_jsxs("div", { className: "grid gap-4", children: [_jsxs("p", { className: "rounded-lg border border-dashed border-border bg-background p-3 text-[12px] leading-5 text-foreground/65", children: ["\u516C\u958B\u306B\u5FC5\u8981\u306A\u306E\u306F\u300C", missingRequirementNames(config), "\u300D\u3060\u3051\u3067\u3059\u3002\u305D\u308C\u4EE5\u5916\u306F\u672A\u5165\u529B\u3067\u3082\u3001\u516C\u958B\u6642\u306B\u81EA\u52D5\u3067\u8A2D\u5B9A\u3055\u308C\u307E\u3059\uFF08\u53F3\u5074\u306E\u300C\u8A73\u7D30\u8A2D\u5B9A\u300D\u3067\u500B\u5225\u306B\u6307\u5B9A\u3059\u308B\u3053\u3068\u3082\u3067\u304D\u307E\u3059\uFF09\u3002"] }), !canPublish && missingFields.length > 0 && (_jsxs("p", { className: "rounded-lg border border-amber-300 bg-amber-50 p-3 text-[12px] font-bold leading-5 text-amber-700 md:hidden", children: ["\u516C\u958B\u3059\u308B\u306B\u306F\u300C", missingFields.join("」「"), "\u300D\u306E\u5165\u529B\u304C\u5FC5\u8981\u3067\u3059\u3002"] })), _jsxs("label", { className: "block text-[13px] font-bold", children: ["\u30BF\u30A4\u30C8\u30EB", _jsx("input", { value: title, onChange: (event) => {
+    return (_jsxs("main", { className: "min-h-screen bg-[rgb(247,247,247)] pb-28", children: [_jsx("header", { className: "sticky top-0 z-20 border-b border-border bg-background/95 px-4 py-3 backdrop-blur", children: _jsxs("div", { className: "mx-auto flex max-w-[1180px] items-center justify-between gap-3", children: [_jsxs(Link, { href: ADMIN_PATHS.posts, className: "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border", children: [_jsx(ArrowLeft, { size: 18 }), _jsx("span", { className: "sr-only", children: "\u8A18\u4E8B\u4E00\u89A7\u3078\u623B\u308B" })] }), _jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("p", { className: "truncate text-[13px] font-bold", children: title || "新規記事" }), _jsx("p", { className: "text-[11px] text-foreground/55", children: headerStatus })] }), _jsx(AdminLogoutButton, { className: "h-10 w-10 shrink-0" }), _jsxs("div", { className: "hidden gap-2 md:flex", children: [_jsxs("button", { type: "button", onClick: () => void save("draft"), disabled: !canEdit || isSaving || isLoading || isUnpublishing, title: canEdit ? "下書きを保存する" : VIEWER_NOTICE, className: "flex h-10 items-center gap-2 rounded-lg border border-border px-4 text-[13px] font-bold disabled:opacity-50", children: [isSaving ? _jsx(Loader2, { className: "animate-spin", size: 16 }) : _jsx(Save, { size: 16 }), "\u4FDD\u5B58"] }), canUnpublish && (_jsxs("button", { type: "button", onClick: () => void unpublish(), disabled: !canEdit || isUnpublishing || isPublishing || isSaving, title: canEdit ? "公開を取り下げる" : VIEWER_NOTICE, className: "flex h-10 items-center gap-2 rounded-lg border border-border px-4 text-[13px] font-bold text-foreground/75 disabled:opacity-50", children: [isUnpublishing ? (_jsx(Loader2, { className: "animate-spin", size: 16 })) : (_jsx(EyeOff, { size: 16 })), "\u53D6\u308A\u4E0B\u3052"] })), canEdit && !canPublish && missingFields.length > 0 && (_jsxs("span", { className: "hidden max-w-[260px] text-[11px] leading-tight text-amber-600 md:inline", children: ["\u516C\u958B\u306B\u306F\u672A\u5165\u529B\u3042\u308A\uFF1A", missingFields.join("・")] })), _jsxs("button", { type: "button", onClick: () => void publish(), disabled: !canEdit || !canPublish || isPublishing || isSaving || isUnpublishing, title: publishButtonTitle(canEdit, canPublish, missingFields), className: "flex h-10 items-center gap-2 rounded-lg bg-foreground px-4 text-[13px] font-bold text-background disabled:opacity-40", children: [isPublishing ? _jsx(Loader2, { className: "animate-spin", size: 16 }) : _jsx(Send, { size: 16 }), "\u516C\u958B"] })] })] }) }), !canEdit && (_jsx("div", { className: "border-b border-border bg-muted px-4 py-2 text-center text-[13px] font-bold text-foreground/75", children: VIEWER_NOTICE })), _jsxs("div", { className: "mx-auto grid max-w-[1180px] gap-5 px-4 py-5 lg:grid-cols-[minmax(0,1fr)_360px]", children: [_jsxs("section", { className: "min-w-0", children: [_jsxs("div", { className: "mb-4 grid grid-cols-2 rounded-lg border border-border bg-background p-1", children: [_jsxs("button", { type: "button", onClick: () => setTab("edit"), className: `flex h-10 items-center justify-center gap-2 rounded-md text-[13px] font-bold ${tab === "edit" ? "bg-foreground text-background" : "text-foreground/70"}`, children: [_jsx(Check, { size: 16 }), "\u7DE8\u96C6"] }), _jsxs("button", { type: "button", onClick: () => setTab("preview"), className: `flex h-10 items-center justify-center gap-2 rounded-md text-[13px] font-bold ${tab === "preview" ? "bg-foreground text-background" : "text-foreground/70"}`, children: [_jsx(Eye, { size: 16 }), "\u30D7\u30EC\u30D3\u30E5\u30FC"] })] }), message ? (_jsx("p", { className: "mb-4 rounded-lg border border-border bg-background p-3 text-[13px]", children: message })) : null, tab === "edit" ? (_jsxs("div", { className: "grid gap-4", children: [_jsxs("p", { className: "rounded-lg border border-dashed border-border bg-background p-3 text-[12px] leading-5 text-foreground/65", children: ["\u516C\u958B\u306B\u5FC5\u8981\u306A\u306E\u306F\u300C", missingRequirementNames(config), "\u300D\u3060\u3051\u3067\u3059\u3002\u305D\u308C\u4EE5\u5916\u306F\u672A\u5165\u529B\u3067\u3082\u3001\u516C\u958B\u6642\u306B\u81EA\u52D5\u3067\u8A2D\u5B9A\u3055\u308C\u307E\u3059\uFF08\u53F3\u5074\u306E\u300C\u8A73\u7D30\u8A2D\u5B9A\u300D\u3067\u500B\u5225\u306B\u6307\u5B9A\u3059\u308B\u3053\u3068\u3082\u3067\u304D\u307E\u3059\uFF09\u3002"] }), canEdit && !canPublish && missingFields.length > 0 && (_jsxs("p", { className: "rounded-lg border border-amber-300 bg-amber-50 p-3 text-[12px] font-bold leading-5 text-amber-700 md:hidden", children: ["\u516C\u958B\u3059\u308B\u306B\u306F\u300C", missingFields.join("」「"), "\u300D\u306E\u5165\u529B\u304C\u5FC5\u8981\u3067\u3059\u3002"] })), _jsxs("label", { className: "block text-[13px] font-bold", children: ["\u30BF\u30A4\u30C8\u30EB", _jsx("input", { value: title, onChange: (event) => {
                                                     setTitle(event.target.value);
                                                     if (!postId)
                                                         setSlug(slugify(event.target.value));
-                                                }, className: "mt-2 h-12 w-full rounded-lg border border-border bg-background px-3 text-[16px] outline-none focus:border-foreground", placeholder: "\u8A18\u4E8B\u30BF\u30A4\u30C8\u30EB" })] }), _jsxs("div", { className: "text-[13px] font-bold", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsx("span", { children: "\u672C\u6587" }), _jsx("button", { type: "button", onClick: () => switchEditorMode(editorMode === "rich" ? "markdown" : "rich"), className: "text-[12px] font-bold text-foreground/55 underline underline-offset-2", children: editorMode === "rich" ? "マークダウンで編集" : "通常の編集に戻す" })] }), editorMode === "rich" ? (_jsx(RichTextEditor, { ref: richEditorRef, markdown: bodyMarkdown, onChange: setBodyMarkdown, onRequestImage: () => bodyImageInputRef.current?.click() })) : (_jsx("textarea", { ref: textareaRef, value: bodyMarkdown, onChange: (event) => setBodyMarkdown(event.target.value), className: "mt-2 min-h-[460px] w-full rounded-lg border border-border bg-background px-3 py-3 font-mono text-[15px] leading-7 outline-none focus:border-foreground", spellCheck: false }))] })] })) : (_jsxs("article", { className: "rounded-lg border border-border bg-background px-4 py-5 sm:px-6", children: [_jsx("p", { className: "text-[12px] font-bold text-foreground/55", children: categoryLabel || "カテゴリ未設定" }), _jsx("h1", { className: "mt-2 text-[26px] font-bold leading-tight", children: title || "記事タイトル" }), _jsx("p", { className: "mt-2 text-[13px] text-foreground/55", children: date }), heroImageKey ? (_jsx("img", { src: heroImageKey, alt: heroImageAlt || "", className: "mt-5 aspect-[16/9] w-full rounded-lg object-cover" })) : null, excerpt ? (_jsx("p", { className: "mt-5 text-[15px] font-bold leading-7", children: excerpt })) : null, _jsx("div", { className: "mt-7 grid gap-4 text-[15px] leading-8", children: previewBlocks.map((block, index) => {
+                                                }, readOnly: !canEdit, className: "mt-2 h-12 w-full rounded-lg border border-border bg-background px-3 text-[16px] outline-none focus:border-foreground", placeholder: "\u8A18\u4E8B\u30BF\u30A4\u30C8\u30EB" })] }), _jsxs("div", { className: "text-[13px] font-bold", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsx("span", { children: "\u672C\u6587" }), _jsx("button", { type: "button", onClick: () => switchEditorMode(editorMode === "rich" ? "markdown" : "rich"), 
+                                                        // 閲覧専用でも、マークダウン原文を見たい人はいるので切り替えは残す
+                                                        className: "text-[12px] font-bold text-foreground/55 underline underline-offset-2", children: editorMode === "rich" ? "マークダウンで編集" : "通常の編集に戻す" })] }), editorMode === "rich" ? (_jsx(RichTextEditor, { ref: richEditorRef, markdown: bodyMarkdown, onChange: setBodyMarkdown, onRequestImage: () => bodyImageInputRef.current?.click(), editable: canEdit })) : (_jsx("textarea", { ref: textareaRef, value: bodyMarkdown, onChange: (event) => setBodyMarkdown(event.target.value), readOnly: !canEdit, className: "mt-2 min-h-[460px] w-full rounded-lg border border-border bg-background px-3 py-3 font-mono text-[15px] leading-7 outline-none focus:border-foreground", spellCheck: false }))] })] })) : (_jsxs("article", { className: "rounded-lg border border-border bg-background px-4 py-5 sm:px-6", children: [_jsx("p", { className: "text-[12px] font-bold text-foreground/55", children: categoryLabel || "カテゴリ未設定" }), _jsx("h1", { className: "mt-2 text-[26px] font-bold leading-tight", children: title || "記事タイトル" }), _jsx("p", { className: "mt-2 text-[13px] text-foreground/55", children: date }), heroImageKey ? (_jsx("img", { src: heroImageKey, alt: heroImageAlt || "", className: "mt-5 aspect-[16/9] w-full rounded-lg object-cover" })) : null, excerpt ? (_jsx("p", { className: "mt-5 text-[15px] font-bold leading-7", children: excerpt })) : null, _jsx("div", { className: "mt-7 grid gap-4 text-[15px] leading-8", children: previewBlocks.map((block, index) => {
                                             if (block.kind === "h1") {
                                                 return (_jsx("h2", { className: "text-[24px] font-bold leading-tight", children: block.text }, `${block.kind}-${index}`));
                                             }
@@ -516,11 +580,11 @@ export function AdminEditorClient({ config, router }) {
                                                 return (_jsx("img", { src: block.src, alt: block.alt || "", className: "aspect-[16/9] w-full rounded-lg object-cover" }, `${block.kind}-${index}`));
                                             }
                                             return _jsx("p", { children: block.text }, `${block.kind}-${index}`);
-                                        }) })] }))] }), _jsxs("aside", { className: "grid gap-4 self-start lg:sticky lg:top-[76px]", children: [_jsxs("section", { className: "rounded-lg border border-border bg-background p-4", children: [_jsxs("button", { type: "button", onClick: () => setShowAdvanced((value) => !value), className: "flex w-full items-center justify-between gap-2 text-left text-[14px] font-bold", "aria-expanded": showAdvanced, children: [_jsxs("span", { className: "flex items-center gap-2", children: ["\u8A73\u7D30\u8A2D\u5B9A\uFF08\u4EFB\u610F\uFF09", hasMissingInAdvanced && (_jsx("span", { className: "rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700", children: "\u672A\u5165\u529B\u3042\u308A" }))] }), _jsx(ChevronDown, { size: 18, className: `transition-transform ${showAdvanced ? "rotate-180" : ""}` })] }), _jsx("p", { className: "mt-2 text-[12px] leading-5 text-foreground/55", children: "slug\u30FB\u30AB\u30C6\u30B4\u30EA\u30FB\u8981\u7D04\u30FB\u8457\u8005\u30FBSEO \u306A\u3069\u306F\u672A\u5165\u529B\u3067\u3082\u3001\u516C\u958B\u6642\u306B\u81EA\u52D5\u3067\u8A2D\u5B9A\u3055\u308C\u307E\u3059\u3002\u6307\u5B9A\u3057\u305F\u3044\u5834\u5408\u3060\u3051\u958B\u3044\u3066\u304F\u3060\u3055\u3044\u3002" })] }), showAdvanced ? (_jsxs("section", { className: "rounded-lg border border-border bg-background p-4", children: [_jsx("h2", { className: "text-[14px] font-bold", children: "\u516C\u958B\u8A2D\u5B9A" }), _jsxs("div", { className: "mt-4 grid gap-4", children: [_jsxs("label", { className: "block text-[12px] font-bold", children: ["slug", _jsx("input", { value: slug, onChange: (event) => setSlug(event.target.value), disabled: Boolean(postId), className: "mt-2 h-11 w-full rounded-md border border-border bg-background px-3 text-[15px] disabled:bg-muted disabled:text-foreground/55" })] }), _jsxs("label", { className: "block text-[12px] font-bold", children: ["\u516C\u958B\u65E5", _jsx("input", { value: date, onChange: (event) => setDate(event.target.value), type: "date", className: "mt-2 h-11 w-full rounded-md border border-border bg-background px-3 text-[15px]" })] }), _jsxs("label", { className: "block text-[12px] font-bold", children: ["\u30AB\u30C6\u30B4\u30EA", _jsxs("select", { value: categorySlug, onChange: (event) => {
+                                        }) })] }))] }), _jsxs("aside", { className: "grid gap-4 self-start lg:sticky lg:top-[76px]", children: [_jsxs("section", { className: "rounded-lg border border-border bg-background p-4", children: [_jsxs("button", { type: "button", onClick: () => setShowAdvanced((value) => !value), className: "flex w-full items-center justify-between gap-2 text-left text-[14px] font-bold", "aria-expanded": showAdvanced, children: [_jsxs("span", { className: "flex items-center gap-2", children: ["\u8A73\u7D30\u8A2D\u5B9A\uFF08\u4EFB\u610F\uFF09", canEdit && hasMissingInAdvanced && (_jsx("span", { className: "rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700", children: "\u672A\u5165\u529B\u3042\u308A" }))] }), _jsx(ChevronDown, { size: 18, className: `transition-transform ${showAdvanced ? "rotate-180" : ""}` })] }), _jsx("p", { className: "mt-2 text-[12px] leading-5 text-foreground/55", children: "slug\u30FB\u30AB\u30C6\u30B4\u30EA\u30FB\u8981\u7D04\u30FB\u8457\u8005\u30FBSEO \u306A\u3069\u306F\u672A\u5165\u529B\u3067\u3082\u3001\u516C\u958B\u6642\u306B\u81EA\u52D5\u3067\u8A2D\u5B9A\u3055\u308C\u307E\u3059\u3002\u6307\u5B9A\u3057\u305F\u3044\u5834\u5408\u3060\u3051\u958B\u3044\u3066\u304F\u3060\u3055\u3044\u3002" })] }), showAdvanced ? (_jsxs("section", { className: "rounded-lg border border-border bg-background p-4", children: [_jsx("h2", { className: "text-[14px] font-bold", children: "\u516C\u958B\u8A2D\u5B9A" }), _jsxs("div", { className: "mt-4 grid gap-4", children: [_jsxs("label", { className: "block text-[12px] font-bold", children: ["slug", _jsx("input", { value: slug, onChange: (event) => setSlug(event.target.value), disabled: Boolean(postId) || !canEdit, className: "mt-2 h-11 w-full rounded-md border border-border bg-background px-3 text-[15px] disabled:bg-muted disabled:text-foreground/55" })] }), _jsxs("label", { className: "block text-[12px] font-bold", children: ["\u516C\u958B\u65E5", _jsx("input", { value: date, onChange: (event) => setDate(event.target.value), type: "date", disabled: !canEdit, className: "mt-2 h-11 w-full rounded-md border border-border bg-background px-3 text-[15px]" })] }), _jsxs("label", { className: "block text-[12px] font-bold", children: ["\u30AB\u30C6\u30B4\u30EA", _jsxs("select", { value: categorySlug, onChange: (event) => {
                                                             const next = categories.find((category) => category.slug === event.target.value);
                                                             setCategorySlug(event.target.value);
                                                             setCategoryLabel(next?.label || "");
-                                                        }, className: "mt-2 h-11 w-full rounded-md border border-border bg-background px-3 text-[15px]", children: [_jsx("option", { value: "", children: "\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044" }), categories.map((category) => (_jsx("option", { value: category.slug, children: category.label }, category.id || category.slug)))] })] }), _jsxs("label", { className: "block text-[12px] font-bold", children: ["\u8981\u7D04\uFF08\u4EFB\u610F\u30FB\u672A\u5165\u529B\u306A\u3089\u672C\u6587\u304B\u3089\u81EA\u52D5\u4F5C\u6210\uFF09", _jsx("textarea", { value: excerpt, onChange: (event) => setExcerpt(event.target.value), className: "mt-2 min-h-[96px] w-full rounded-md border border-border bg-background px-3 py-2 text-[15px] leading-6" })] })] })] })) : null, _jsxs("section", { className: "rounded-lg border border-border bg-background p-4", children: [_jsx("h2", { className: "text-[14px] font-bold", children: "\u5199\u771F" }), _jsx("input", { ref: heroImageInputRef, type: "file", accept: "image/*", className: "hidden", onChange: (event) => {
+                                                        }, disabled: !canEdit, className: "mt-2 h-11 w-full rounded-md border border-border bg-background px-3 text-[15px]", children: [_jsx("option", { value: "", children: "\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044" }), categories.map((category) => (_jsx("option", { value: category.slug, children: category.label }, category.id || category.slug)))] })] }), _jsxs("label", { className: "block text-[12px] font-bold", children: ["\u8981\u7D04\uFF08\u4EFB\u610F\u30FB\u672A\u5165\u529B\u306A\u3089\u672C\u6587\u304B\u3089\u81EA\u52D5\u4F5C\u6210\uFF09", _jsx("textarea", { value: excerpt, onChange: (event) => setExcerpt(event.target.value), readOnly: !canEdit, className: "mt-2 min-h-[96px] w-full rounded-md border border-border bg-background px-3 py-2 text-[15px] leading-6" })] })] })] })) : null, _jsxs("section", { className: "rounded-lg border border-border bg-background p-4", children: [_jsx("h2", { className: "text-[14px] font-bold", children: "\u5199\u771F" }), _jsx("input", { ref: heroImageInputRef, type: "file", accept: "image/*", className: "hidden", onChange: (event) => {
                                             const file = event.target.files?.[0];
                                             if (file)
                                                 void uploadImage(file, "hero");
@@ -530,11 +594,19 @@ export function AdminEditorClient({ config, router }) {
                                             if (file)
                                                 void uploadImage(file, "body");
                                             event.target.value = "";
-                                        } }), heroImageKey ? (_jsx("img", { src: heroImageKey, alt: heroImageAlt || "", className: "mt-4 aspect-[16/9] w-full rounded-lg border border-border object-cover" })) : (_jsx("div", { className: "mt-4 flex aspect-[16/9] items-center justify-center rounded-lg border border-dashed border-border bg-muted text-[12px] font-bold text-foreground/45", children: "\u30A2\u30A4\u30AD\u30E3\u30C3\u30C1\u672A\u8A2D\u5B9A" })), _jsxs("button", { type: "button", onClick: () => heroImageInputRef.current?.click(), disabled: isUploading, className: "mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-foreground text-[13px] font-bold text-background disabled:opacity-50", children: [isUploading ? (_jsx(Loader2, { className: "animate-spin", size: 16 })) : (_jsx(ImagePlus, { size: 16 })), "\u30A2\u30A4\u30AD\u30E3\u30C3\u30C1\u753B\u50CF\u3092\u30A2\u30C3\u30D7\u30ED\u30FC\u30C9"] }), _jsxs("button", { type: "button", onClick: () => bodyImageInputRef.current?.click(), disabled: isUploading, className: "mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-border text-[13px] font-bold disabled:opacity-50", children: [isUploading ? (_jsx(Loader2, { className: "animate-spin", size: 16 })) : (_jsx(ImagePlus, { size: 16 })), "\u672C\u6587\u306B\u753B\u50CF\u3092\u633F\u5165"] }), _jsxs("label", { className: "mt-4 block text-[12px] font-bold", children: ["\u753B\u50CF\u30D1\u30B9", _jsx("input", { value: heroImageKey, onChange: (event) => setHeroImageKey(event.target.value), className: "mt-2 h-11 w-full rounded-md border border-border bg-muted px-3 text-[13px] text-foreground/65", placeholder: "\u30A2\u30C3\u30D7\u30ED\u30FC\u30C9\u3059\u308B\u3068\u81EA\u52D5\u3067\u5165\u308A\u307E\u3059" })] }), _jsxs("label", { className: "mt-4 block text-[12px] font-bold", children: ["\u753B\u50CF\u8AAC\u660E", _jsx("input", { value: heroImageAlt, onChange: (event) => setHeroImageAlt(event.target.value), className: "mt-2 h-11 w-full rounded-md border border-border bg-background px-3 text-[15px]" })] })] }), showAdvanced ? (_jsxs(_Fragment, { children: [_jsxs("section", { className: "rounded-lg border border-border bg-background p-4", children: [_jsx("h2", { className: "text-[14px] font-bold", children: "\u65B0\u898F\u30AB\u30C6\u30B4\u30EA" }), _jsxs("div", { className: "mt-4 grid gap-3", children: [_jsx("input", { value: newCategoryLabel, onChange: (event) => {
+                                        } }), heroImageKey ? (_jsx("img", { src: heroImageKey, alt: heroImageAlt || "", className: "mt-4 aspect-[16/9] w-full rounded-lg border border-border object-cover" })) : (_jsx("div", { className: "mt-4 flex aspect-[16/9] items-center justify-center rounded-lg border border-dashed border-border bg-muted text-[12px] font-bold text-foreground/45", children: "\u30A2\u30A4\u30AD\u30E3\u30C3\u30C1\u672A\u8A2D\u5B9A" })), _jsxs("button", { type: "button", onClick: () => heroImageInputRef.current?.click(), disabled: !canEdit || isUploading, title: canEdit ? undefined : VIEWER_NOTICE, className: "mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-foreground text-[13px] font-bold text-background disabled:opacity-50", children: [isUploading ? (_jsx(Loader2, { className: "animate-spin", size: 16 })) : (_jsx(ImagePlus, { size: 16 })), "\u30A2\u30A4\u30AD\u30E3\u30C3\u30C1\u753B\u50CF\u3092\u30A2\u30C3\u30D7\u30ED\u30FC\u30C9"] }), _jsxs("button", { type: "button", onClick: () => bodyImageInputRef.current?.click(), disabled: !canEdit || isUploading, title: canEdit ? undefined : VIEWER_NOTICE, className: "mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-border text-[13px] font-bold disabled:opacity-50", children: [isUploading ? (_jsx(Loader2, { className: "animate-spin", size: 16 })) : (_jsx(ImagePlus, { size: 16 })), "\u672C\u6587\u306B\u753B\u50CF\u3092\u633F\u5165"] }), _jsxs("label", { className: "mt-4 block text-[12px] font-bold", children: ["\u753B\u50CF\u30D1\u30B9", _jsx("input", { value: heroImageKey, onChange: (event) => setHeroImageKey(event.target.value), readOnly: !canEdit, className: "mt-2 h-11 w-full rounded-md border border-border bg-muted px-3 text-[13px] text-foreground/65", placeholder: "\u30A2\u30C3\u30D7\u30ED\u30FC\u30C9\u3059\u308B\u3068\u81EA\u52D5\u3067\u5165\u308A\u307E\u3059" })] }), _jsxs("label", { className: "mt-4 block text-[12px] font-bold", children: ["\u753B\u50CF\u8AAC\u660E", _jsx("input", { value: heroImageAlt, onChange: (event) => setHeroImageAlt(event.target.value), readOnly: !canEdit, className: "mt-2 h-11 w-full rounded-md border border-border bg-background px-3 text-[15px]" })] })] }), showAdvanced ? (_jsxs(_Fragment, { children: [_jsxs("section", { className: "rounded-lg border border-border bg-background p-4", children: [_jsx("h2", { className: "text-[14px] font-bold", children: "\u65B0\u898F\u30AB\u30C6\u30B4\u30EA" }), _jsxs("div", { className: "mt-4 grid gap-3", children: [_jsx("input", { value: newCategoryLabel, onChange: (event) => {
                                                             setNewCategoryLabel(event.target.value);
                                                             if (!newCategorySlug)
                                                                 setNewCategorySlug(slugify(event.target.value));
-                                                        }, className: "h-11 w-full rounded-md border border-border bg-background px-3 text-[15px]", placeholder: "\u8868\u793A\u540D" }), _jsx("input", { value: newCategorySlug, onChange: (event) => setNewCategorySlug(event.target.value), className: "h-11 w-full rounded-md border border-border bg-background px-3 text-[15px]", placeholder: "slug" }), _jsxs("button", { type: "button", onClick: () => void addCategory(), className: "flex h-11 items-center justify-center gap-2 rounded-lg border border-border text-[13px] font-bold", children: [_jsx(Plus, { size: 16 }), "\u8FFD\u52A0"] })] }), _jsxs("div", { className: "mt-5 border-t border-border pt-4", children: [_jsx("p", { className: "text-[12px] font-bold text-foreground/55", children: "\u73FE\u5728\u306E\u30AB\u30C6\u30B4\u30EA" }), _jsx("div", { className: "mt-3 grid gap-2", children: categories.map((category) => (_jsxs("div", { className: "flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-2", children: [_jsxs("div", { className: "min-w-0", children: [_jsx("p", { className: "truncate text-[13px] font-bold", children: category.label }), _jsx("p", { className: "truncate text-[11px] text-foreground/45", children: category.slug })] }), isAdmin ? (_jsx("button", { type: "button", onClick: () => void deleteCategory(category), disabled: deletingCategoryId === category.id, className: "flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-background text-foreground/65 disabled:opacity-40", "aria-label": `${category.label}を削除`, children: deletingCategoryId === category.id ? (_jsx(Loader2, { className: "animate-spin", size: 15 })) : (_jsx(Trash2, { size: 15 })) })) : null] }, category.id || category.slug))) })] })] }), _jsxs("section", { className: "rounded-lg border border-border bg-background p-4", children: [_jsx("h2", { className: "text-[14px] font-bold", children: "SEO / \u88DC\u8DB3" }), _jsxs("div", { className: "mt-4 grid gap-4", children: [_jsxs("label", { className: "block text-[12px] font-bold", children: ["\u8457\u8005", _jsx("input", { value: author, onChange: (event) => setAuthor(event.target.value), className: "mt-2 h-11 w-full rounded-md border border-border bg-background px-3 text-[15px]" })] }), _jsxs("label", { className: "block text-[12px] font-bold", children: ["\u8457\u8005\u80A9\u66F8\u304D", _jsx("input", { value: authorRole, onChange: (event) => setAuthorRole(event.target.value), className: "mt-2 h-11 w-full rounded-md border border-border bg-background px-3 text-[15px]" })] }), _jsxs("label", { className: "block text-[12px] font-bold", children: ["OG\u8AAC\u660E", _jsx("textarea", { value: ogDescription, onChange: (event) => setOgDescription(event.target.value), className: "mt-2 min-h-[80px] w-full rounded-md border border-border bg-background px-3 py-2 text-[15px] leading-6" })] }), _jsxs("label", { className: "block text-[12px] font-bold", children: ["\u30BF\u30B0\uFF08\u30AB\u30F3\u30DE\u533A\u5207\u308A\uFF09", _jsx("input", { value: tagsText, onChange: (event) => setTagsText(event.target.value), className: "mt-2 h-11 w-full rounded-md border border-border bg-background px-3 text-[15px]" })] }), _jsxs("label", { className: "block text-[12px] font-bold", children: ["FAQ\uFF081\u884C\u306B\u300C\u8CEA\u554F | \u56DE\u7B54\u300D\uFF09", _jsx("textarea", { value: faqText, onChange: (event) => setFaqText(event.target.value), className: "mt-2 min-h-[112px] w-full rounded-md border border-border bg-background px-3 py-2 text-[15px] leading-6" })] })] })] })] })) : null] })] }), _jsx("nav", { className: "fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background px-4 py-3 md:hidden", children: _jsxs("div", { className: `mx-auto grid max-w-[520px] gap-3 ${canUnpublish ? "grid-cols-3" : "grid-cols-2"}`, children: [_jsxs("button", { type: "button", onClick: () => void save("draft"), disabled: isSaving || isLoading || isUnpublishing, className: "flex h-12 items-center justify-center gap-2 rounded-lg border border-border text-[14px] font-bold disabled:opacity-50", children: [isSaving ? _jsx(Loader2, { className: "animate-spin", size: 17 }) : _jsx(Save, { size: 17 }), "\u4FDD\u5B58"] }), canUnpublish && (_jsxs("button", { type: "button", onClick: () => void unpublish(), disabled: isUnpublishing || isPublishing || isSaving, className: "flex h-12 items-center justify-center gap-2 rounded-lg border border-border text-[14px] font-bold disabled:opacity-50", children: [isUnpublishing ? (_jsx(Loader2, { className: "animate-spin", size: 17 })) : (_jsx(EyeOff, { size: 17 })), "\u53D6\u308A\u4E0B\u3052"] })), _jsxs("button", { type: "button", onClick: () => void publish(), disabled: !canPublish || isPublishing || isSaving || isUnpublishing, className: "flex h-12 items-center justify-center gap-2 rounded-lg bg-foreground text-[14px] font-bold text-background disabled:opacity-40", children: [isPublishing ? _jsx(Loader2, { className: "animate-spin", size: 17 }) : _jsx(Send, { size: 17 }), "\u516C\u958B"] })] }) })] }));
+                                                        }, readOnly: !canEdit, className: "h-11 w-full rounded-md border border-border bg-background px-3 text-[15px]", placeholder: "\u8868\u793A\u540D" }), _jsx("input", { value: newCategorySlug, onChange: (event) => setNewCategorySlug(event.target.value), readOnly: !canEdit, className: "h-11 w-full rounded-md border border-border bg-background px-3 text-[15px]", placeholder: "slug" }), _jsxs("button", { type: "button", onClick: () => void addCategory(), disabled: !canEdit, title: canEdit ? undefined : VIEWER_NOTICE, className: "flex h-11 items-center justify-center gap-2 rounded-lg border border-border text-[13px] font-bold disabled:opacity-50", children: [_jsx(Plus, { size: 16 }), "\u8FFD\u52A0"] })] }), _jsxs("div", { className: "mt-5 border-t border-border pt-4", children: [_jsx("p", { className: "text-[12px] font-bold text-foreground/55", children: "\u73FE\u5728\u306E\u30AB\u30C6\u30B4\u30EA" }), _jsx("div", { className: "mt-3 grid gap-2", children: categories.map((category) => (_jsxs("div", { className: "flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-2", children: [_jsxs("div", { className: "min-w-0", children: [_jsx("p", { className: "truncate text-[13px] font-bold", children: category.label }), _jsx("p", { className: "truncate text-[11px] text-foreground/45", children: category.slug })] }), isAdmin ? (_jsx("button", { type: "button", onClick: () => void deleteCategory(category), disabled: deletingCategoryId === category.id, className: "flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-background text-foreground/65 disabled:opacity-40", "aria-label": `${category.label}を削除`, children: deletingCategoryId === category.id ? (_jsx(Loader2, { className: "animate-spin", size: 15 })) : (_jsx(Trash2, { size: 15 })) })) : null] }, category.id || category.slug))) })] })] }), _jsxs("section", { className: "rounded-lg border border-border bg-background p-4", children: [_jsx("h2", { className: "text-[14px] font-bold", children: "SEO / \u88DC\u8DB3" }), _jsxs("div", { className: "mt-4 grid gap-4", children: [_jsxs("label", { className: "block text-[12px] font-bold", children: ["\u8457\u8005", _jsx("input", { value: author, onChange: (event) => setAuthor(event.target.value), readOnly: !canEdit, className: "mt-2 h-11 w-full rounded-md border border-border bg-background px-3 text-[15px]" })] }), _jsxs("label", { className: "block text-[12px] font-bold", children: ["\u8457\u8005\u80A9\u66F8\u304D", _jsx("input", { value: authorRole, onChange: (event) => setAuthorRole(event.target.value), readOnly: !canEdit, className: "mt-2 h-11 w-full rounded-md border border-border bg-background px-3 text-[15px]" })] }), _jsxs("label", { className: "block text-[12px] font-bold", children: ["OG\u8AAC\u660E", _jsx("textarea", { value: ogDescription, onChange: (event) => setOgDescription(event.target.value), readOnly: !canEdit, className: "mt-2 min-h-[80px] w-full rounded-md border border-border bg-background px-3 py-2 text-[15px] leading-6" })] }), _jsxs("label", { className: "block text-[12px] font-bold", children: ["\u30BF\u30B0\uFF08\u30AB\u30F3\u30DE\u533A\u5207\u308A\uFF09", _jsx("input", { value: tagsText, onChange: (event) => setTagsText(event.target.value), readOnly: !canEdit, className: "mt-2 h-11 w-full rounded-md border border-border bg-background px-3 text-[15px]" })] }), _jsxs("label", { className: "block text-[12px] font-bold", children: ["FAQ\uFF081\u884C\u306B\u300C\u8CEA\u554F | \u56DE\u7B54\u300D\uFF09", _jsx("textarea", { value: faqText, onChange: (event) => setFaqText(event.target.value), readOnly: !canEdit, className: "mt-2 min-h-[112px] w-full rounded-md border border-border bg-background px-3 py-2 text-[15px] leading-6" })] })] })] })] })) : null] })] }), _jsx("nav", { className: "fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background px-4 py-3 md:hidden", children: _jsxs("div", { className: `mx-auto grid max-w-[520px] gap-3 ${canUnpublish ? "grid-cols-3" : "grid-cols-2"}`, children: [_jsxs("button", { type: "button", onClick: () => void save("draft"), disabled: !canEdit || isSaving || isLoading || isUnpublishing, title: canEdit ? undefined : VIEWER_NOTICE, className: "flex h-12 items-center justify-center gap-2 rounded-lg border border-border text-[14px] font-bold disabled:opacity-50", children: [isSaving ? _jsx(Loader2, { className: "animate-spin", size: 17 }) : _jsx(Save, { size: 17 }), "\u4FDD\u5B58"] }), canUnpublish && (_jsxs("button", { type: "button", onClick: () => void unpublish(), disabled: !canEdit || isUnpublishing || isPublishing || isSaving, title: canEdit ? undefined : VIEWER_NOTICE, className: "flex h-12 items-center justify-center gap-2 rounded-lg border border-border text-[14px] font-bold disabled:opacity-50", children: [isUnpublishing ? (_jsx(Loader2, { className: "animate-spin", size: 17 })) : (_jsx(EyeOff, { size: 17 })), "\u53D6\u308A\u4E0B\u3052"] })), _jsxs("button", { type: "button", onClick: () => void publish(), disabled: !canEdit || !canPublish || isPublishing || isSaving || isUnpublishing, title: publishButtonTitle(canEdit, canPublish, missingFields), className: "flex h-12 items-center justify-center gap-2 rounded-lg bg-foreground text-[14px] font-bold text-background disabled:opacity-40", children: [isPublishing ? _jsx(Loader2, { className: "animate-spin", size: 17 }) : _jsx(Send, { size: 17 }), "\u516C\u958B"] })] }) })] }));
+}
+/** 公開ボタンの title。押せないときは、その理由（権限か未入力か）を出す。 */
+function publishButtonTitle(canEdit, canPublish, missingFields) {
+    if (!canEdit)
+        return VIEWER_NOTICE;
+    if (canPublish)
+        return "公開する";
+    return `公開には次の入力が必要です：${missingFields.join("・")}`;
 }
 /** 案内文に出す「公開に必要な項目」の並び。設定の requiredFields をそのまま日本語にする。 */
 function missingRequirementNames(config) {

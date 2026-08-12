@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { FileText, Plus, RefreshCw, Trash2, UsersRound } from "lucide-react";
 
 import type { AdminRole, BlogAdminConfig } from "../config/index.js";
-import { publicPostUrl } from "../config/index.js";
+import { canEditContent, publicPostUrl } from "../config/index.js";
 import { AdminLogoutButton } from "./AdminLogoutButton.js";
 import { ADMIN_API, ADMIN_PATHS, editorPath, postApi } from "./paths.js";
 import type { AdminRouter } from "./router.js";
@@ -24,6 +24,9 @@ type PostTab = "published" | "draft";
 
 const PUBLIC_STATUSES = new Set(["published", "publishing"]);
 const LOAD_ERROR_MESSAGE = "記事一覧を取得できませんでした。時間をおいて再度お試しください。";
+const VIEWER_NOTICE =
+  "閲覧専用の権限でログインしています。記事の作成・保存・公開・画像アップロードはできません。";
+const FORBIDDEN_MESSAGE = "権限がありません。この操作は許可されていません。";
 
 function statusLabel(status: string): string {
   const labels: Record<string, string> = {
@@ -62,6 +65,8 @@ export function AdminPostsClient({ config, router, headerActions }: AdminPostsCl
   const [role, setRole] = useState<AdminRole | null>(null);
 
   const isAdmin = role === "admin";
+  // 閲覧専用（client_viewer）は記事を作れないので、新規作成の導線を出さない。
+  const canEdit = canEditContent(role);
   const canDelete = role !== null && config.permissions.deletePost.includes(role);
 
   const counts = useMemo(
@@ -126,6 +131,10 @@ export function AdminPostsClient({ config, router, headerActions }: AdminPostsCl
       router.navigate(ADMIN_PATHS.login);
       return;
     }
+    if (res.status === 403) {
+      setMessage(FORBIDDEN_MESSAGE);
+      return;
+    }
     if (!res.ok) {
       setMessage("記事を削除できませんでした。時間をおいて再度お試しください。");
       return;
@@ -180,7 +189,7 @@ export function AdminPostsClient({ config, router, headerActions }: AdminPostsCl
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[12px] font-bold tracking-[0.28em] text-foreground/50">
-              BLOG ADMIN
+              {config.brandLabel}
             </p>
             <h1 className="mt-2 text-[26px] font-bold leading-tight">記事一覧</h1>
           </div>
@@ -207,6 +216,12 @@ export function AdminPostsClient({ config, router, headerActions }: AdminPostsCl
             <AdminLogoutButton />
           </div>
         </div>
+
+        {!canEdit ? (
+          <p className="mt-6 rounded-lg border border-border bg-muted p-4 text-center text-[13px] font-bold text-foreground/75">
+            {VIEWER_NOTICE}
+          </p>
+        ) : null}
 
         {message ? (
           <p className="mt-6 rounded-lg border border-border bg-background p-4 text-[13px]">
@@ -290,13 +305,15 @@ export function AdminPostsClient({ config, router, headerActions }: AdminPostsCl
         </div>
       </div>
 
-      <Link
-        href={editorPath()}
-        className="fixed inset-x-4 bottom-4 mx-auto flex h-12 max-w-[480px] items-center justify-center gap-2 rounded-lg bg-foreground text-[15px] font-bold text-background shadow-lg"
-      >
-        <Plus size={18} />
-        新規記事
-      </Link>
+      {canEdit ? (
+        <Link
+          href={editorPath()}
+          className="fixed inset-x-4 bottom-4 mx-auto flex h-12 max-w-[480px] items-center justify-center gap-2 rounded-lg bg-foreground text-[15px] font-bold text-background shadow-lg"
+        >
+          <Plus size={18} />
+          新規記事
+        </Link>
+      ) : null}
       {isLoading ? null : <div className="h-1" />}
     </main>
   );

@@ -43,6 +43,11 @@ export interface RichTextEditorProps {
   onChange: (markdown: string) => void;
   /** ツールバーの画像ボタンから、親が持つファイル選択を開く */
   onRequestImage: () => void;
+  /**
+   * false にすると本文を編集できなくし、ツールバーも出さない（閲覧専用ユーザー向け）。
+   * 既定は true。
+   */
+  editable?: boolean;
 }
 
 const editorClassName = [
@@ -89,7 +94,7 @@ function ToolButton({ label, active, disabled, onClick, children }: ToolButtonPr
 }
 
 export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorProps>(
-  function RichTextEditor({ markdown, onChange, onRequestImage }, ref) {
+  function RichTextEditor({ markdown, onChange, onRequestImage, editable = true }, ref) {
     // 親から渡された markdown と、自分が最後に親へ返した markdown を突き合わせて、
     // 自分の編集が setContent で巻き戻る無限ループを防ぐ
     const lastEmitted = useRef<string>(normalizeMarkdown(markdown));
@@ -104,6 +109,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     const editor = useEditor({
       // サーバーレンダリングとのハイドレーションずれを起こさないために必須
       immediatelyRender: false,
+      editable,
       extensions: [
         StarterKit.configure({
           // 記事タイトルが H1 なので、本文の見出しは H2 / H3 に限定する
@@ -130,6 +136,12 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
         onChangeRef.current(next);
       },
     });
+
+    // 権限は /api/admin/me の応答後に確定するため、生成時のオプションだけでは足りない。
+    // editable が変わったらエディタへ反映する。
+    useEffect(() => {
+      editor?.setEditable(editable);
+    }, [editor, editable]);
 
     // 記事の読み込みなど、親側で本文が差し替わったときにエディタへ反映する
     useEffect(() => {
@@ -178,103 +190,105 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
 
     return (
       <div className="mt-2 rounded-lg border border-border bg-background">
-        <div className="flex flex-wrap items-center gap-1 border-b border-border p-2">
-          <ToolButton
-            label="見出し（大）"
-            active={editor.isActive("heading", { level: 2 })}
-            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-          >
-            <Heading2 size={16} />
-          </ToolButton>
-          <ToolButton
-            label="見出し（小）"
-            active={editor.isActive("heading", { level: 3 })}
-            onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-          >
-            <Heading3 size={16} />
-          </ToolButton>
-
-          <span className="mx-1 h-5 w-px bg-border" />
-
-          <ToolButton
-            label="太字"
-            active={editor.isActive("bold")}
-            onClick={() => editor.chain().focus().toggleBold().run()}
-          >
-            <Bold size={16} />
-          </ToolButton>
-          <ToolButton
-            label="斜体"
-            active={editor.isActive("italic")}
-            onClick={() => editor.chain().focus().toggleItalic().run()}
-          >
-            <Italic size={16} />
-          </ToolButton>
-
-          <span className="mx-1 h-5 w-px bg-border" />
-
-          <ToolButton
-            label="箇条書き"
-            active={editor.isActive("bulletList")}
-            onClick={() => editor.chain().focus().toggleBulletList().run()}
-          >
-            <List size={16} />
-          </ToolButton>
-          <ToolButton
-            label="番号付きリスト"
-            active={editor.isActive("orderedList")}
-            onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          >
-            <ListOrdered size={16} />
-          </ToolButton>
-          <ToolButton
-            label="引用"
-            active={editor.isActive("blockquote")}
-            onClick={() => editor.chain().focus().toggleBlockquote().run()}
-          >
-            <Quote size={16} />
-          </ToolButton>
-          <ToolButton
-            label="区切り線"
-            onClick={() => editor.chain().focus().setHorizontalRule().run()}
-          >
-            <Minus size={16} />
-          </ToolButton>
-
-          <span className="mx-1 h-5 w-px bg-border" />
-
-          <ToolButton label="リンク" active={editor.isActive("link")} onClick={openLinkInput}>
-            <Link2 size={16} />
-          </ToolButton>
-          {editor.isActive("link") ? (
+        {editable ? (
+          <div className="flex flex-wrap items-center gap-1 border-b border-border p-2">
             <ToolButton
-              label="リンクを外す"
-              onClick={() => editor.chain().focus().extendMarkRange("link").unsetLink().run()}
+              label="見出し（大）"
+              active={editor.isActive("heading", { level: 2 })}
+              onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
             >
-              <Link2Off size={16} />
-            </ToolButton>
-          ) : null}
-          <ToolButton label="画像を挿入" onClick={onRequestImage}>
-            <ImagePlus size={16} />
-          </ToolButton>
-
-          <span className="ml-auto flex items-center gap-1">
-            <ToolButton
-              label="元に戻す"
-              disabled={!editor.can().undo()}
-              onClick={() => editor.chain().focus().undo().run()}
-            >
-              <Undo2 size={16} />
+              <Heading2 size={16} />
             </ToolButton>
             <ToolButton
-              label="やり直す"
-              disabled={!editor.can().redo()}
-              onClick={() => editor.chain().focus().redo().run()}
+              label="見出し（小）"
+              active={editor.isActive("heading", { level: 3 })}
+              onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
             >
-              <Redo2 size={16} />
+              <Heading3 size={16} />
             </ToolButton>
-          </span>
-        </div>
+
+            <span className="mx-1 h-5 w-px bg-border" />
+
+            <ToolButton
+              label="太字"
+              active={editor.isActive("bold")}
+              onClick={() => editor.chain().focus().toggleBold().run()}
+            >
+              <Bold size={16} />
+            </ToolButton>
+            <ToolButton
+              label="斜体"
+              active={editor.isActive("italic")}
+              onClick={() => editor.chain().focus().toggleItalic().run()}
+            >
+              <Italic size={16} />
+            </ToolButton>
+
+            <span className="mx-1 h-5 w-px bg-border" />
+
+            <ToolButton
+              label="箇条書き"
+              active={editor.isActive("bulletList")}
+              onClick={() => editor.chain().focus().toggleBulletList().run()}
+            >
+              <List size={16} />
+            </ToolButton>
+            <ToolButton
+              label="番号付きリスト"
+              active={editor.isActive("orderedList")}
+              onClick={() => editor.chain().focus().toggleOrderedList().run()}
+            >
+              <ListOrdered size={16} />
+            </ToolButton>
+            <ToolButton
+              label="引用"
+              active={editor.isActive("blockquote")}
+              onClick={() => editor.chain().focus().toggleBlockquote().run()}
+            >
+              <Quote size={16} />
+            </ToolButton>
+            <ToolButton
+              label="区切り線"
+              onClick={() => editor.chain().focus().setHorizontalRule().run()}
+            >
+              <Minus size={16} />
+            </ToolButton>
+
+            <span className="mx-1 h-5 w-px bg-border" />
+
+            <ToolButton label="リンク" active={editor.isActive("link")} onClick={openLinkInput}>
+              <Link2 size={16} />
+            </ToolButton>
+            {editor.isActive("link") ? (
+              <ToolButton
+                label="リンクを外す"
+                onClick={() => editor.chain().focus().extendMarkRange("link").unsetLink().run()}
+              >
+                <Link2Off size={16} />
+              </ToolButton>
+            ) : null}
+            <ToolButton label="画像を挿入" onClick={onRequestImage}>
+              <ImagePlus size={16} />
+            </ToolButton>
+
+            <span className="ml-auto flex items-center gap-1">
+              <ToolButton
+                label="元に戻す"
+                disabled={!editor.can().undo()}
+                onClick={() => editor.chain().focus().undo().run()}
+              >
+                <Undo2 size={16} />
+              </ToolButton>
+              <ToolButton
+                label="やり直す"
+                disabled={!editor.can().redo()}
+                onClick={() => editor.chain().focus().redo().run()}
+              >
+                <Redo2 size={16} />
+              </ToolButton>
+            </span>
+          </div>
+        ) : null}
 
         {linkOpen ? (
           <div className="flex flex-wrap items-center gap-2 border-b border-border bg-muted px-2 py-2">

@@ -10,6 +10,7 @@ Cloudflare Pages + D1 + R2 で動く、日本語向けのブログ管理画面�
 
 - メール／パスワードのログイン（PBKDF2、`__Host-` Cookie、試行回数制限）
 - 3段階の権限（`admin` / `client_publisher` / `client_viewer`）とユーザー管理
+  （`client_viewer` は閲覧専用。編集系のボタンは画面側でも無効になる）
 - 記事の下書き・改訂履歴・公開・公開取り下げ
 - リッチテキストエディタ（Markdown と相互変換）
 - 画像アップロード（ブラウザ側でリサイズ、マジックナンバー検査、R2 から配信）
@@ -27,7 +28,7 @@ Cloudflare Pages + D1 + R2 で動く、日本語向けのブログ管理画面�
 npm レジストリには publish していない。public リポジトリの git 依存として入れる。認証は不要。
 
 ```
-npm i "github:5Y1U5/cf-pages-blog-admin#v1.0.0"
+npm i "github:5Y1U5/cf-pages-blog-admin#v1.0.1"
 ```
 
 ## 使い方

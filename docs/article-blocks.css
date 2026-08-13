@@ -1,0 +1,228 @@
+/*
+ * ブロック記法（content/article-blocks）が出す HTML に当てる CSS のひな形。
+ *
+ * 導入先の記事本文コンテナ（.blog-article など）の中に置く前提。
+ * 色とフォントは下の3変数だけ差し替えれば、あとはそのまま使える。
+ * サイトの雰囲気に合わせて角丸や余白を詰めるのは自由。
+ */
+
+:root {
+  /* 差し替える3つ */
+  --blog-accent: #51b5bc; /* ラベル・強調に使う色 */
+  --blog-surface: #f7f7f5; /* カードの背景 */
+  --blog-line: #e5e5e0; /* 罫線 */
+}
+
+/* 要点ボックス（:::callout） */
+.blog-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  margin: 1.75rem 0;
+  padding: 1.1rem 1.25rem;
+  background: var(--blog-surface);
+  border-left: 4px solid var(--blog-accent);
+  border-radius: 12px;
+}
+
+.blog-callout-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--blog-accent) 12%, transparent);
+}
+
+.blog-callout-icon svg {
+  width: 20px;
+  height: 20px;
+  color: var(--blog-accent);
+}
+
+.blog-callout-text {
+  flex: 1;
+  line-height: 1.8;
+}
+
+.blog-callout-text strong {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+/* ポイントカード（:::points） */
+.blog-points {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.85rem;
+  margin: 1.75rem 0;
+}
+
+.blog-point {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--blog-line);
+  border-radius: 12px;
+}
+
+.blog-point-label {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: var(--blog-accent);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.blog-point-text {
+  margin: 0;
+  line-height: 1.65;
+}
+
+/* 比較カード（:::compare）。2枚目以降が「こうする」側。 */
+.blog-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+  margin: 1.75rem 0;
+}
+
+.blog-compare-card {
+  padding: 1rem 1.1rem;
+  border-radius: 12px;
+  background: var(--blog-surface);
+}
+
+.blog-compare-card.is-after {
+  background: color-mix(in srgb, var(--blog-accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--blog-accent) 25%, transparent);
+}
+
+.blog-compare-label {
+  margin-bottom: 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  opacity: 0.7;
+}
+
+.blog-compare-card.is-after .blog-compare-label {
+  color: var(--blog-accent);
+  opacity: 1;
+}
+
+.blog-compare-text {
+  line-height: 1.7;
+}
+
+/* 数字ハイライト（:::stat） */
+.blog-stat {
+  margin: 1.75rem 0;
+  padding: 1.5rem 1rem;
+  border-radius: 16px;
+  background: var(--blog-surface);
+  text-align: center;
+}
+
+.blog-stat-number {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: var(--blog-accent);
+  font-size: 2.4rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.blog-stat-text {
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+/* よくある質問（:::faq） */
+.blog-faq {
+  margin-top: 3rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--blog-line);
+}
+
+.blog-faq h2 {
+  margin-bottom: 1.25rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.blog-faq details {
+  margin-bottom: 0.75rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--blog-line);
+  border-radius: 12px;
+  transition: border-color 0.2s;
+}
+
+.blog-faq details[open] {
+  border-color: var(--blog-accent);
+}
+
+.blog-faq summary {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding-right: 1.5rem;
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+
+.blog-faq summary::-webkit-details-marker {
+  display: none;
+}
+
+.blog-faq summary::before {
+  content: "Q";
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--blog-accent);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.blog-faq summary::after {
+  content: "+";
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 1.3rem;
+  font-weight: 300;
+  opacity: 0.6;
+  transition: transform 0.2s;
+}
+
+.blog-faq details[open] summary::after {
+  content: "−";
+  color: var(--blog-accent);
+  opacity: 1;
+}
+
+.blog-faq details > div {
+  padding: 0.85rem 0 0 2.2rem;
+  line-height: 1.85;
+}
+
+/* スマホでは1列に落とす */
+@media (max-width: 640px) {
+  .blog-points,
+  .blog-compare {
+    grid-template-columns: 1fr;
+  }
+}

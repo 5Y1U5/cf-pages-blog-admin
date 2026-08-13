@@ -29,6 +29,10 @@
       "types": "./dist/config/env.d.ts",
       "default": "./dist/config/env.js"
     },
+    "./content/*": {
+      "types": "./dist/content/*.d.ts",
+      "default": "./dist/content/*.js"
+    },
     "./ui": {
       "types": "./dist/ui/index.d.ts",
       "default": "./dist/ui/index.js"

@@ -111,6 +111,53 @@ export default function Page() {
 実例は `examples/nextjs`（Pages Functions）、`examples/vite-wouter`、
 `examples/nextjs-route-handlers`（Workers 上の Next.js で API を `app/api/**/route.ts` に置く構成）にある。
 
+## 本文のブロック記法
+
+写真を使わない記事でも読み進められるよう、本文に差し込む視覚要素を Markdown から書ける。
+生の HTML を本文に許すのではなく、決まった5種類だけを記法で受ける
+（公開側のサニタイズを外さずに済み、書き手が増えても崩れない）。
+
+```
+:::callout 今日の見方
+最初の3口だけ、箸を置いてから飲み込む。
+:::
+
+:::points
+場面 01 | 昼休みが短く、時計を見ながら食べる。
+場面 02 | スマホや動画を見ながら食べる。
+:::
+
+:::compare
+続きにくい目標 | 毎食、全部を30回噛むと決める。
+始めやすい目標 | 最初の3口だけ、箸を置いてから飲み込む。
+:::
+
+:::stat 29%
+健康管理アプリの3ヶ月後の継続率
+:::
+
+:::faq
+何回噛めばよいですか？ | まずは最初の3口だけ箸を置くところから始めましょう。
+:::
+```
+
+公開側では Markdown 変換の前後をこのパッケージに任せる。Markdown 本体の変換だけ渡す
+（公開側は remark、編集画面は marked と使うライブラリが違うため）。
+
+```ts
+import { renderArticleHtmlAsync } from "@5y1u5/cf-pages-blog-admin/content/article-blocks";
+
+const html = await renderArticleHtmlAsync(markdown, (source) =>
+  remark().use(remarkGfm).use(remarkHtml, { sanitize: true }).process(source).then(String)
+);
+```
+
+CSS のひな形は `docs/article-blocks.css`。色の変数3つを差し替えれば使える。
+
+- 中身は必ずエスケープしてから組み立てる。リンクは http/https のみ、強調は `**...**` のみ通す
+- 閉じ忘れたブロックは Markdown としてそのまま出す（記事が消えるより崩れて見えるほうがよい）
+- 編集画面のプレビューはラベルだけの簡易表示。実際の見た目は公開ページの CSS が決める
+
 ## 設定
 
 `defineBlogAdminConfig()` に渡す。必須は3項目だけで、残りは既定値が入る。

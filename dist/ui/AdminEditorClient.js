@@ -72,12 +72,31 @@ function stringifyFaq(value) {
         return "";
     }
 }
+/** ブロック記法をプレビューでどう呼ぶか。実際の見た目は公開ページ側の CSS で決まる。 */
+const BLOCK_LABELS = {
+    callout: "要点ボックス",
+    points: "ポイントカード",
+    compare: "比較カード",
+    stat: "数字ハイライト",
+    faq: "よくある質問",
+};
 function markdownPreview(markdown) {
     return markdown
         .split("\n")
         .map((raw) => raw.trim())
         .filter(Boolean)
         .map((line) => {
+        // ブロック記法は編集画面では簡易表示にとどめる（公開ページでカードとして出る）。
+        const blockOpen = line.match(/^:::([a-z]+)[ 　]*(.*)$/);
+        if (blockOpen) {
+            const label = BLOCK_LABELS[blockOpen[1] || ""];
+            if (label) {
+                const arg = (blockOpen[2] || "").trim();
+                return { kind: "block", text: arg ? `${label}：${arg}` : label };
+            }
+        }
+        if (/^:::[ 　]*$/.test(line))
+            return { kind: "skip", text: "" };
         const image = line.match(/^!\[(.*)]\((.*)\)$/);
         if (image) {
             return { kind: "image", text: "", alt: image[1] || "", src: image[2] || "" };
@@ -91,7 +110,8 @@ function markdownPreview(markdown) {
         if (line.startsWith("- "))
             return { kind: "li", text: line.replace(/^- /, "") };
         return { kind: "p", text: line };
-    });
+    })
+        .filter((block) => block.kind !== "skip");
 }
 function statusLabel(status) {
     const labels = {
@@ -606,6 +626,9 @@ export function AdminEditorClient({ config, router }) {
                                             }
                                             if (block.kind === "h3") {
                                                 return (_jsx("h3", { className: "text-[18px] font-bold", children: block.text }, `${block.kind}-${index}`));
+                                            }
+                                            if (block.kind === "block") {
+                                                return (_jsx("p", { className: "rounded-md bg-muted px-3 py-2 text-[12px] font-bold tracking-wide text-foreground/60", children: block.text }, `${block.kind}-${index}`));
                                             }
                                             if (block.kind === "li") {
                                                 return _jsxs("p", { children: ["\u30FB", block.text] }, `${block.kind}-${index}`);

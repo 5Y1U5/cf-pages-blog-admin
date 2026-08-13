@@ -157,6 +157,15 @@ function stringifyFaq(value: string): string {
   }
 }
 
+/** ブロック記法をプレビューでどう呼ぶか。実際の見た目は公開ページ側の CSS で決まる。 */
+const BLOCK_LABELS: Record<string, string> = {
+  callout: "要点ボックス",
+  points: "ポイントカード",
+  compare: "比較カード",
+  stat: "数字ハイライト",
+  faq: "よくある質問",
+};
+
 function markdownPreview(
   markdown: string
 ): { kind: string; text: string; src?: string; alt?: string }[] {
@@ -165,6 +174,17 @@ function markdownPreview(
     .map((raw) => raw.trim())
     .filter(Boolean)
     .map((line) => {
+      // ブロック記法は編集画面では簡易表示にとどめる（公開ページでカードとして出る）。
+      const blockOpen = line.match(/^:::([a-z]+)[ 　]*(.*)$/);
+      if (blockOpen) {
+        const label = BLOCK_LABELS[blockOpen[1] || ""];
+        if (label) {
+          const arg = (blockOpen[2] || "").trim();
+          return { kind: "block", text: arg ? `${label}：${arg}` : label };
+        }
+      }
+      if (/^:::[ 　]*$/.test(line)) return { kind: "skip", text: "" };
+
       const image = line.match(/^!\[(.*)]\((.*)\)$/);
       if (image) {
         return { kind: "image", text: "", alt: image[1] || "", src: image[2] || "" };
@@ -174,7 +194,8 @@ function markdownPreview(
       if (line.startsWith("# ")) return { kind: "h1", text: line.replace(/^# /, "") };
       if (line.startsWith("- ")) return { kind: "li", text: line.replace(/^- /, "") };
       return { kind: "p", text: line };
-    });
+    })
+    .filter((block) => block.kind !== "skip");
 }
 
 function statusLabel(status: string): string {
@@ -935,6 +956,16 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
                       <h3 key={`${block.kind}-${index}`} className="text-[18px] font-bold">
                         {block.text}
                       </h3>
+                    );
+                  }
+                  if (block.kind === "block") {
+                    return (
+                      <p
+                        key={`${block.kind}-${index}`}
+                        className="rounded-md bg-muted px-3 py-2 text-[12px] font-bold tracking-wide text-foreground/60"
+                      >
+                        {block.text}
+                      </p>
                     );
                   }
                   if (block.kind === "li") {

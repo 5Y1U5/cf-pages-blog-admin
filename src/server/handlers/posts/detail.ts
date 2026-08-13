@@ -1,4 +1,8 @@
-import { postFilePath, type BlogAdminConfig } from "../../../config/index.js";
+import {
+  normalizePostType,
+  postFilePath,
+  type BlogAdminConfig,
+} from "../../../config/index.js";
 import type { BlogAdminEnv } from "../../../config/env.js";
 import {
   badRequest,
@@ -15,6 +19,7 @@ import { deriveExcerpt } from "../../_shared/posts.js";
 
 interface UpdatePostPayload {
   title?: string;
+  postType?: string;
   date?: string;
   categorySlug?: string;
   categoryLabel?: string;
@@ -76,6 +81,15 @@ export function createPostDetailHandlers(config: BlogAdminConfig) {
       return badRequest("invalid status.");
     }
 
+    // 区分は指定が無ければ既存の値を保つ。区分を使っていないサイトでは常に空文字。
+    const current = await db
+      .prepare("SELECT post_type FROM post_drafts WHERE id = ? AND client_id = ? LIMIT 1")
+      .bind(ctx.params.id, user.client_id)
+      .first<{ post_type: string | null }>();
+    const postType = config.content.postTypes.length
+      ? normalizePostType(config, payload.postType ?? current?.post_type ?? "")
+      : "";
+
     const now = nowIso();
 
     // 更新前の状態を改訂履歴として保存する（誰がいつ何を変えたかの監査証跡）。
@@ -102,6 +116,7 @@ export function createPostDetailHandlers(config: BlogAdminConfig) {
     const result = await db
       .prepare(
         `UPDATE post_drafts SET
+           post_type = ?,
            title = ?,
            date = ?,
            category_slug = ?,
@@ -121,6 +136,7 @@ export function createPostDetailHandlers(config: BlogAdminConfig) {
          WHERE id = ? AND client_id = ?`
       )
       .bind(
+        postType,
         title,
         normalizeString(payload.date) || new Date().toISOString().slice(0, 10),
         categorySlug,

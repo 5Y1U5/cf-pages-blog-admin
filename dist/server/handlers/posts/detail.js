@@ -1,4 +1,4 @@
-import { postFilePath } from "../../../config/index.js";
+import { normalizePostType, postFilePath, } from "../../../config/index.js";
 import { badRequest, json, normalizeString, nowIso, randomId, readJson, requireDb, requireUser, } from "../../_shared/admin.js";
 import { deleteGitHubFile } from "../../_shared/github.js";
 import { deriveExcerpt } from "../../_shared/posts.js";
@@ -46,6 +46,14 @@ export function createPostDetailHandlers(config) {
         if (!EDITABLE_STATUSES.includes(status)) {
             return badRequest("invalid status.");
         }
+        // 区分は指定が無ければ既存の値を保つ。区分を使っていないサイトでは常に空文字。
+        const current = await db
+            .prepare("SELECT post_type FROM post_drafts WHERE id = ? AND client_id = ? LIMIT 1")
+            .bind(ctx.params.id, user.client_id)
+            .first();
+        const postType = config.content.postTypes.length
+            ? normalizePostType(config, payload.postType ?? current?.post_type ?? "")
+            : "";
         const now = nowIso();
         // 更新前の状態を改訂履歴として保存する（誰がいつ何を変えたかの監査証跡）。
         const prior = await db
@@ -60,6 +68,7 @@ export function createPostDetailHandlers(config) {
         }
         const result = await db
             .prepare(`UPDATE post_drafts SET
+           post_type = ?,
            title = ?,
            date = ?,
            category_slug = ?,
@@ -77,7 +86,7 @@ export function createPostDetailHandlers(config) {
            updated_by = ?,
            updated_at = ?
          WHERE id = ? AND client_id = ?`)
-            .bind(title, normalizeString(payload.date) || new Date().toISOString().slice(0, 10), categorySlug, categoryLabel, excerpt, payload.heroImageKey || null, payload.heroImageAlt || null, normalizeString(payload.author) || config.defaultAuthor, payload.authorRole || null, bodyMarkdown, payload.ogDescription || null, JSON.stringify(Array.isArray(payload.tags) ? payload.tags : []), JSON.stringify(Array.isArray(payload.faq) ? payload.faq : []), status, user.id, now, ctx.params.id, user.client_id)
+            .bind(postType, title, normalizeString(payload.date) || new Date().toISOString().slice(0, 10), categorySlug, categoryLabel, excerpt, payload.heroImageKey || null, payload.heroImageAlt || null, normalizeString(payload.author) || config.defaultAuthor, payload.authorRole || null, bodyMarkdown, payload.ogDescription || null, JSON.stringify(Array.isArray(payload.tags) ? payload.tags : []), JSON.stringify(Array.isArray(payload.faq) ? payload.faq : []), status, user.id, now, ctx.params.id, user.client_id)
             .run();
         if (result.meta.changes === 0) {
             return json({ ok: false, error: "not_found" }, { status: 404 });

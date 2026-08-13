@@ -31,6 +31,19 @@ export function canEditContent(role: AdminRole | null): boolean {
 /** 公開時に入力を必須にできる項目。 */
 export type PublishRequirement = "title" | "body" | "slug" | "date" | "category";
 
+/**
+ * 記事の出し先の区分。1つのサイトで「お知らせ」と「ブログ」のように
+ * 置き場所と URL が分かれる場合に使う。
+ */
+export interface BlogAdminPostType {
+  /** D1 の post_type 列に入る値。 */
+  value: string;
+  /** 画面に出す名前。 */
+  label: string;
+  /** 公開 URL の接頭辞。`publish.publicPathPrefix` より優先される。 */
+  publicPathPrefix: string;
+}
+
 export interface BlogAdminContentConfig {
   /** 記事 Markdown の出力先ディレクトリ。末尾スラッシュなし。 */
   postsDir: string;
@@ -40,6 +53,12 @@ export interface BlogAdminContentConfig {
   defaultHeroImage: string | null;
   /** カテゴリ一覧を書き出す JSON のパス。postsDir とは独立して指定する。 */
   categoriesJsonPath: string;
+  /**
+   * 記事の区分。空なら区分なし（従来どおり単一の記事一覧として扱う）。
+   * 指定すると編集画面に区分の選択が出て、公開 URL も区分ごとの接頭辞になる。
+   * 先頭の要素が新規記事の既定値。
+   */
+  postTypes: BlogAdminPostType[];
 }
 
 export interface BlogAdminCategoryConfig {
@@ -166,6 +185,7 @@ const DEFAULT_CONTENT: BlogAdminContentConfig = {
   heroImageKey: "heroImage",
   defaultHeroImage: null,
   categoriesJsonPath: "content/blog-categories.json",
+  postTypes: [],
 };
 
 const DEFAULT_CATEGORY: BlogAdminCategoryConfig = {
@@ -275,6 +295,34 @@ export function postFilePath(config: BlogAdminConfig, slug: string): string {
 }
 
 /** 公開 URL を組み立てる（`publicPathPrefix/<slug>`）。 */
-export function publicPostUrl(config: BlogAdminConfig, slug: string): string {
-  return `${config.publish.publicPathPrefix.replace(/\/+$/, "")}/${slug}`;
+export function publicPostUrl(
+  config: BlogAdminConfig,
+  slug: string,
+  postType?: string | null
+): string {
+  const prefix = resolvePostTypePrefix(config, postType);
+  return `${prefix.replace(/\/+$/, "")}/${slug}`;
+}
+
+/** 区分が設定されていればその接頭辞、無ければ publish.publicPathPrefix。 */
+export function resolvePostTypePrefix(
+  config: BlogAdminConfig,
+  postType?: string | null
+): string {
+  const types = config.content.postTypes;
+  if (!types.length) return config.publish.publicPathPrefix;
+  const matched = types.find((t) => t.value === postType) || types[0];
+  return matched ? matched.publicPathPrefix : config.publish.publicPathPrefix;
+}
+
+/** 保存してよい区分か。区分を使っていないサイトでは常に空文字を返す。 */
+export function normalizePostType(
+  config: BlogAdminConfig,
+  raw?: string | null
+): string {
+  const types = config.content.postTypes;
+  if (!types.length) return "";
+  const value = (raw || "").trim();
+  const matched = types.find((t) => t.value === value);
+  return matched ? matched.value : (types[0]?.value ?? "");
 }

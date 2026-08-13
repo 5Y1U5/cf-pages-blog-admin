@@ -11,6 +11,7 @@ import type { AdminRouter } from "./router.js";
 
 interface AdminPostListItem {
   id: string;
+  post_type?: string | null;
   slug: string;
   title: string;
   date: string;
@@ -115,7 +116,7 @@ export function AdminPostsClient({ config, router, headerActions }: AdminPostsCl
       "",
       isPublic
         ? `この記事はいま公開されています。削除すると、サイトから記事ページごと消えます。\n記事の URL（${
-            post.published_url || publicPostUrl(config, post.slug)
+            post.published_url || publicPostUrl(config, post.slug, post.post_type)
           }）は「ページが見つかりません（404）」になります。`
         : "この記事はまだ公開されていません。削除してもサイトの見た目は変わりません。",
       "",

@@ -2,6 +2,8 @@ import type { BlogAdminConfig } from "../../config/index.js";
 export interface PostDraftRow {
     id: string;
     client_id: string;
+    /** 記事の区分。区分を使っていないサイトでは空文字。 */
+    post_type?: string | null;
     slug: string;
     title: string;
     date: string;

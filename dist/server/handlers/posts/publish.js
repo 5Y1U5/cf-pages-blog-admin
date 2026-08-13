@@ -157,7 +157,7 @@ export function createPublishHandlers(config) {
                 return aborted;
         }
         const commitSha = postCommit instanceof Response ? null : postCommit.commitSha;
-        const publishedUrl = publicPostUrl(config, effectivePost.slug);
+        const publishedUrl = publicPostUrl(config, effectivePost.slug, effectivePost.post_type);
         await db
             .prepare(`UPDATE post_drafts
          SET status = 'published',

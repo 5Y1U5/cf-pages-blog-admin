@@ -71,7 +71,7 @@ export function AdminPostsClient({ config, router, headerActions }) {
             `　状態：${isPublic ? "公開中" : "下書き（未公開）"}`,
             "",
             isPublic
-                ? `この記事はいま公開されています。削除すると、サイトから記事ページごと消えます。\n記事の URL（${post.published_url || publicPostUrl(config, post.slug)}）は「ページが見つかりません（404）」になります。`
+                ? `この記事はいま公開されています。削除すると、サイトから記事ページごと消えます。\n記事の URL（${post.published_url || publicPostUrl(config, post.slug, post.post_type)}）は「ページが見つかりません（404）」になります。`
                 : "この記事はまだ公開されていません。削除してもサイトの見た目は変わりません。",
             "",
             "削除した記事は元に戻せません。書き直す場合は最初から作り直しになります。",

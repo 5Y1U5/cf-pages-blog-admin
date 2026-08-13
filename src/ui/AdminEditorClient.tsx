@@ -48,6 +48,7 @@ interface AdminCategory {
 
 interface AdminPost {
   id: string;
+  post_type?: string | null;
   slug: string;
   title: string;
   date: string;
@@ -68,6 +69,7 @@ interface AdminPost {
 
 interface SavePayload {
   title: string;
+  postType?: string;
   slug?: string;
   date: string;
   categorySlug: string;
@@ -295,6 +297,9 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
   const [slug, setSlug] = useState("");
   const [date, setDate] = useState(today());
   const [categorySlug, setCategorySlug] = useState("");
+  // 記事の区分（お知らせ／ブログ等）。設定していないサイトでは使わない。
+  const postTypes = config.content.postTypes;
+  const [postType, setPostType] = useState(postTypes[0]?.value ?? "");
   const [categoryLabel, setCategoryLabel] = useState("");
   const [excerpt, setExcerpt] = useState("");
   const [heroImageKey, setHeroImageKey] = useState("");
@@ -389,6 +394,7 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
     setSlug(post.slug || "");
     setDate(post.date || today());
     setCategorySlug(post.category_slug || "");
+    if (postTypes.length) setPostType(post.post_type || postTypes[0]?.value || "");
     setCategoryLabel(post.category_label || "");
     setExcerpt(post.excerpt || "");
     setHeroImageKey(post.hero_image_key || "");
@@ -456,6 +462,7 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
     const resolvedCategoryLabel = selectedCategory?.label || categoryLabel;
     return {
       title: title.trim(),
+      ...(postTypes.length ? { postType } : {}),
       slug: slug.trim() || slugify(title),
       date,
       categorySlug,
@@ -989,6 +996,42 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
         </section>
 
         <aside className="grid gap-4 self-start lg:sticky lg:top-[76px]">
+          {postTypes.length > 1 && (
+            <section className="rounded-lg border border-border bg-background p-4">
+              <p className="text-[12px] font-bold tracking-wide text-foreground/55">
+                この記事の区分
+              </p>
+              <p className="mt-1 text-[12px] leading-5 text-foreground/55">
+                選んだ区分によって、公開先のページと URL が変わります。
+              </p>
+              <div className="mt-3 grid gap-2">
+                {postTypes.map((type) => (
+                  <label
+                    key={type.value}
+                    className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-[13px] ${
+                      postType === type.value
+                        ? "border-foreground bg-muted font-bold"
+                        : "border-border"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="post-type"
+                      value={type.value}
+                      checked={postType === type.value}
+                      onChange={() => setPostType(type.value)}
+                      disabled={!canEdit}
+                    />
+                    <span>{type.label}</span>
+                    <span className="ml-auto text-[11px] text-foreground/45">
+                      {type.publicPathPrefix}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section className="rounded-lg border border-border bg-background p-4">
             <button
               type="button"

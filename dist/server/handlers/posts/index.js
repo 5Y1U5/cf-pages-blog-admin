@@ -1,3 +1,4 @@
+import { normalizePostType } from "../../../config/index.js";
 import { badRequest, isValidSlug, json, normalizeString, nowIso, randomId, readJson, requireDb, requireUser, } from "../../_shared/admin.js";
 import { deriveExcerpt } from "../../_shared/posts.js";
 function slugify(input) {
@@ -47,7 +48,7 @@ export function createPostsHandlers(config) {
         if (db instanceof Response)
             return db;
         const { results } = await db
-            .prepare(`SELECT id, slug, title, date, category_slug, category_label, status,
+            .prepare(`SELECT id, slug, post_type, title, date, category_slug, category_label, status,
                 hero_image_key, hero_image_alt, published_url, updated_at
          FROM post_drafts
          WHERE client_id = ?
@@ -88,20 +89,22 @@ export function createPostsHandlers(config) {
         const bodyMarkdown = normalizeString(payload.bodyMarkdown);
         // 抜粋未入力なら本文から自動生成する。
         const excerpt = normalizeString(payload.excerpt) || deriveExcerpt(bodyMarkdown);
+        // 区分（お知らせ／ブログ等）。設定していないサイトでは空文字のまま。
+        const postType = normalizePostType(config, payload.postType);
         const now = nowIso();
         const id = randomId("post");
         // 初回保存（新規作成）でも hero 画像・著者・著者肩書・OG 説明・タグ・FAQ を取りこぼさない
         // ように、更新（PUT）と同じフィールドを保存する。
         await db
             .prepare(`INSERT INTO post_drafts
-         (id, client_id, slug, title, date, category_slug, category_label, excerpt,
+         (id, client_id, post_type, slug, title, date, category_slug, category_label, excerpt,
           hero_image_key, hero_image_alt, author, author_role, body_markdown,
           og_description, status, tags_json, faq_json, created_by, updated_by,
           created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)`)
-            .bind(id, user.client_id, slug, title, date, categorySlug, categoryLabel, excerpt, payload.heroImageKey || null, payload.heroImageAlt || null, normalizeString(payload.author) || config.defaultAuthor, payload.authorRole || null, bodyMarkdown, payload.ogDescription || null, JSON.stringify(Array.isArray(payload.tags) ? payload.tags : []), JSON.stringify(Array.isArray(payload.faq) ? payload.faq : []), user.id, user.id, now, now)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)`)
+            .bind(id, user.client_id, postType, slug, title, date, categorySlug, categoryLabel, excerpt, payload.heroImageKey || null, payload.heroImageAlt || null, normalizeString(payload.author) || config.defaultAuthor, payload.authorRole || null, bodyMarkdown, payload.ogDescription || null, JSON.stringify(Array.isArray(payload.tags) ? payload.tags : []), JSON.stringify(Array.isArray(payload.faq) ? payload.faq : []), user.id, user.id, now, now)
             .run();
-        return json({ ok: true, post: { id, slug } }, { status: 201 });
+        return json({ ok: true, post: { id, slug, postType } }, { status: 201 });
     };
     return { onRequestGet, onRequestPost };
 }

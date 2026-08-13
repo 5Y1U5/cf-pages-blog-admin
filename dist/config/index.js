@@ -28,6 +28,7 @@ const DEFAULT_CONTENT = {
     heroImageKey: "heroImage",
     defaultHeroImage: null,
     categoriesJsonPath: "content/blog-categories.json",
+    postTypes: [],
 };
 const DEFAULT_CATEGORY = {
     defaultSlug: "news",
@@ -118,6 +119,24 @@ export function postFilePath(config, slug) {
     return `${config.content.postsDir.replace(/\/+$/, "")}/${slug}.md`;
 }
 /** 公開 URL を組み立てる（`publicPathPrefix/<slug>`）。 */
-export function publicPostUrl(config, slug) {
-    return `${config.publish.publicPathPrefix.replace(/\/+$/, "")}/${slug}`;
+export function publicPostUrl(config, slug, postType) {
+    const prefix = resolvePostTypePrefix(config, postType);
+    return `${prefix.replace(/\/+$/, "")}/${slug}`;
+}
+/** 区分が設定されていればその接頭辞、無ければ publish.publicPathPrefix。 */
+export function resolvePostTypePrefix(config, postType) {
+    const types = config.content.postTypes;
+    if (!types.length)
+        return config.publish.publicPathPrefix;
+    const matched = types.find((t) => t.value === postType) || types[0];
+    return matched ? matched.publicPathPrefix : config.publish.publicPathPrefix;
+}
+/** 保存してよい区分か。区分を使っていないサイトでは常に空文字を返す。 */
+export function normalizePostType(config, raw) {
+    const types = config.content.postTypes;
+    if (!types.length)
+        return "";
+    const value = (raw || "").trim();
+    const matched = types.find((t) => t.value === value);
+    return matched ? matched.value : (types[0]?.value ?? "");
 }

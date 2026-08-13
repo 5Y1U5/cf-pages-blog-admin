@@ -1,4 +1,4 @@
-import type { BlogAdminConfig } from "../../../config/index.js";
+import { normalizePostType, type BlogAdminConfig } from "../../../config/index.js";
 import type { BlogAdminEnv } from "../../../config/env.js";
 import {
   badRequest,
@@ -15,6 +15,7 @@ import { deriveExcerpt } from "../../_shared/posts.js";
 
 interface CreatePostPayload {
   title?: string;
+  postType?: string;
   slug?: string;
   date?: string;
   categorySlug?: string;
@@ -84,7 +85,7 @@ export function createPostsHandlers(config: BlogAdminConfig) {
 
     const { results } = await db
       .prepare(
-        `SELECT id, slug, title, date, category_slug, category_label, status,
+        `SELECT id, slug, post_type, title, date, category_slug, category_label, status,
                 hero_image_key, hero_image_alt, published_url, updated_at
          FROM post_drafts
          WHERE client_id = ?
@@ -131,6 +132,9 @@ export function createPostsHandlers(config: BlogAdminConfig) {
     // 抜粋未入力なら本文から自動生成する。
     const excerpt = normalizeString(payload.excerpt) || deriveExcerpt(bodyMarkdown);
 
+    // 区分（お知らせ／ブログ等）。設定していないサイトでは空文字のまま。
+    const postType = normalizePostType(config, payload.postType);
+
     const now = nowIso();
     const id = randomId("post");
     // 初回保存（新規作成）でも hero 画像・著者・著者肩書・OG 説明・タグ・FAQ を取りこぼさない
@@ -138,15 +142,16 @@ export function createPostsHandlers(config: BlogAdminConfig) {
     await db
       .prepare(
         `INSERT INTO post_drafts
-         (id, client_id, slug, title, date, category_slug, category_label, excerpt,
+         (id, client_id, post_type, slug, title, date, category_slug, category_label, excerpt,
           hero_image_key, hero_image_alt, author, author_role, body_markdown,
           og_description, status, tags_json, faq_json, created_by, updated_by,
           created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         id,
         user.client_id,
+        postType,
         slug,
         title,
         date,
@@ -168,7 +173,7 @@ export function createPostsHandlers(config: BlogAdminConfig) {
       )
       .run();
 
-    return json({ ok: true, post: { id, slug } }, { status: 201 });
+    return json({ ok: true, post: { id, slug, postType } }, { status: 201 });
   };
 
   return { onRequestGet, onRequestPost };

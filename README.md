@@ -172,6 +172,7 @@ CSS のひな形は `docs/article-blocks.css`。色の変数3つを差し替え�
 | `content.heroImageKey` | `"heroImage"` | frontmatter のアイキャッチキー |
 | `content.defaultHeroImage` | `null` | 本文にも指定にも画像が無いときの既定アイキャッチ。`null` なら出さない |
 | `content.categoriesJsonPath` | `"content/blog-categories.json"` | カテゴリ一覧の書き出し先 |
+| `content.postTypes` | `[]` | 記事の区分。空なら区分なし。指定すると編集画面に選択が出て、公開 URL も区分ごとになる |
 | `category.defaultSlug` | `"news"` | 既定カテゴリの slug |
 | `category.defaultLabel` | `"お知らせ"` | 既定カテゴリの表示名 |
 | `category.preferredSlugs` | `["news"]` | 既定カテゴリの探索順 |
@@ -236,6 +237,25 @@ automation: {
 - トークンは32文字以上でないと成立しない
 - 一致・不一致にかかわらず同じ回数だけ比較するので、応答時間から答えは漏れない
 - 通ったリクエストは `automation.user` として扱われ、`created_by` / `updated_by` に残る
+
+### 記事の区分（`content.postTypes`）
+
+1つのサイトで「お知らせ」と「ブログ」のように、置き場所と URL が分かれている場合に使う。
+
+```ts
+content: {
+  postTypes: [
+    { value: "news", label: "お知らせ", publicPathPrefix: "/news" },
+    { value: "blog", label: "ブログ", publicPathPrefix: "/blog" },
+  ],
+},
+```
+
+- 既定は空配列。指定しなければ従来どおり単一の記事一覧として動く
+- 指定すると編集画面に区分の選択が出る（2つ以上あるときだけ表示）
+- 公開 URL は区分の `publicPathPrefix` が `publish.publicPathPrefix` より優先される
+- 先頭の要素が新規記事の既定値。未知の値が来たときも先頭に寄せる
+- D1 には `post_type` 列（migration 0005）で入る。区分を使わないサイトでは常に空文字
 
 ### 既定カテゴリの決まり方
 

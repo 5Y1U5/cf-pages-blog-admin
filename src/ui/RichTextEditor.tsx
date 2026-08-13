@@ -32,7 +32,12 @@ import {
   Undo2,
 } from "lucide-react";
 
-import { htmlToMarkdown, markdownToHtml, normalizeMarkdown } from "./lib/admin-markdown.js";
+import {
+  htmlToMarkdown,
+  markdownToHtml,
+  normalizeMarkdown,
+  preloadMarkdownConverter,
+} from "./lib/admin-markdown.js";
 
 export interface RichTextEditorHandle {
   insertImage: (src: string, alt: string) => void;
@@ -103,6 +108,16 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
       onChangeRef.current = onChange;
     }, [onChange]);
 
+    // HTML → マークダウンの変換器はブラウザでしか動かないので、表示された時点で読み込む。
+    // 最初の入力で変換が一拍待たされるのを避けるだけで、無くても動く。
+    useEffect(() => {
+      void preloadMarkdownConverter();
+    }, []);
+
+    // 変換が非同期なので、入力が続くと応答の順序が入れ替わりうる。
+    // 最後に見た HTML と一致するときだけ親へ返し、古い結果で上書きしない。
+    const latestHtml = useRef<string>("");
+
     const [linkOpen, setLinkOpen] = useState(false);
     const [linkUrl, setLinkUrl] = useState("");
 
@@ -131,9 +146,14 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
         },
       },
       onUpdate: ({ editor: instance }) => {
-        const next = normalizeMarkdown(htmlToMarkdown(instance.getHTML()));
-        lastEmitted.current = next;
-        onChangeRef.current(next);
+        const html = instance.getHTML();
+        latestHtml.current = html;
+        void htmlToMarkdown(html).then((markdownText) => {
+          if (latestHtml.current !== html) return;
+          const next = normalizeMarkdown(markdownText);
+          lastEmitted.current = next;
+          onChangeRef.current(next);
+        });
       },
     });
 

@@ -4,14 +4,27 @@
 // 公開パイプライン（server/_shared/posts.ts）は変換の有無に影響されない。
 
 import { marked } from "marked";
-import TurndownService from "turndown";
-import { gfm } from "turndown-plugin-gfm";
+import type TurndownService from "turndown";
 
+// turndown と turndown-plugin-gfm は CommonJS で、DOM も要る。
+// モジュールの先頭で import すると、サーバー側で管理画面を描画する構成
+// （Workers 上の SSR など）で読み込みごと失敗する。ブラウザで初めて必要になった時点で読む。
 let turndown: TurndownService | null = null;
+let loading: Promise<TurndownService> | null = null;
 
-function getTurndown(): TurndownService {
+async function getTurndown(): Promise<TurndownService> {
   if (turndown) return turndown;
-  const service = new TurndownService({
+  if (loading) return loading;
+  loading = buildTurndown();
+  return loading;
+}
+
+async function buildTurndown(): Promise<TurndownService> {
+  const [{ default: TurndownServiceCtor }, { gfm }] = await Promise.all([
+    import("turndown"),
+    import("turndown-plugin-gfm"),
+  ]);
+  const service = new TurndownServiceCtor({
     // 表示側は GFM 系の想定。既存記事に合わせて ATX 見出し（##）を使う。
     headingStyle: "atx",
     bulletListMarker: "-",
@@ -71,10 +84,19 @@ export function markdownToHtml(markdown: string): string {
   return marked.parse(markdown, { async: false, gfm: true, breaks: false });
 }
 
-export function htmlToMarkdown(html: string): string {
+/**
+ * turndown を先に読み込んでおく。編集画面の表示時に呼んでおくと、
+ * 最初の入力で変換が一拍待たされるのを避けられる。
+ */
+export async function preloadMarkdownConverter(): Promise<void> {
+  await getTurndown();
+}
+
+export async function htmlToMarkdown(html: string): Promise<string> {
   if (!html.trim()) return "";
+  const service = await getTurndown();
   return (
-    getTurndown()
+    service
       .turndown(html)
       // 空段落由来の3行以上の空行を詰める
       .replace(/\n{3,}/g, "\n\n")

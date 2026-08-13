@@ -8,7 +8,7 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import { Bold, Heading2, Heading3, ImagePlus, Italic, Link2, Link2Off, List, ListOrdered, Minus, Quote, Redo2, Undo2, } from "lucide-react";
-import { htmlToMarkdown, markdownToHtml, normalizeMarkdown } from "./lib/admin-markdown.js";
+import { htmlToMarkdown, markdownToHtml, normalizeMarkdown, preloadMarkdownConverter, } from "./lib/admin-markdown.js";
 const editorClassName = [
     "[&_.tiptap]:min-h-[460px] [&_.tiptap]:outline-none",
     "[&_.tiptap_h2]:mt-7 [&_.tiptap_h2]:text-[22px] [&_.tiptap_h2]:font-bold [&_.tiptap_h2]:leading-tight",
@@ -36,6 +36,14 @@ export const RichTextEditor = forwardRef(function RichTextEditor({ markdown, onC
     useEffect(() => {
         onChangeRef.current = onChange;
     }, [onChange]);
+    // HTML → マークダウンの変換器はブラウザでしか動かないので、表示された時点で読み込む。
+    // 最初の入力で変換が一拍待たされるのを避けるだけで、無くても動く。
+    useEffect(() => {
+        void preloadMarkdownConverter();
+    }, []);
+    // 変換が非同期なので、入力が続くと応答の順序が入れ替わりうる。
+    // 最後に見た HTML と一致するときだけ親へ返し、古い結果で上書きしない。
+    const latestHtml = useRef("");
     const [linkOpen, setLinkOpen] = useState(false);
     const [linkUrl, setLinkUrl] = useState("");
     const editor = useEditor({
@@ -63,9 +71,15 @@ export const RichTextEditor = forwardRef(function RichTextEditor({ markdown, onC
             },
         },
         onUpdate: ({ editor: instance }) => {
-            const next = normalizeMarkdown(htmlToMarkdown(instance.getHTML()));
-            lastEmitted.current = next;
-            onChangeRef.current(next);
+            const html = instance.getHTML();
+            latestHtml.current = html;
+            void htmlToMarkdown(html).then((markdownText) => {
+                if (latestHtml.current !== html)
+                    return;
+                const next = normalizeMarkdown(markdownText);
+                lastEmitted.current = next;
+                onChangeRef.current(next);
+            });
         },
     });
     // 権限は /api/admin/me の応答後に確定するため、生成時のオプションだけでは足りない。

@@ -1,6 +1,6 @@
 {
   "name": "@5y1u5/cf-pages-blog-admin",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "Blog admin console for Cloudflare Pages Functions + D1 + R2, publishing Markdown through the GitHub Contents API.",
   "license": "MIT",
   "type": "module",

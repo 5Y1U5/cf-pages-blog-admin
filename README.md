@@ -135,6 +135,9 @@ export default function Page() {
 | `github.owner` / `repo` / `branch` | `""` / `""` / `"main"` | 公開先。環境変数が設定されていればそちらが優先される |
 | `github.mode` | `"source"` | `"source"`＝コミットが記事の実体。失敗したら公開しない。`"backup"`＝実体は D1。失敗しても公開は成立し `warning` を返す |
 | `permissions.deletePost` | `["admin"]` | 記事の物理削除を許可するロール |
+| `automation.tokenEnvVar` | `null` | ブラウザを介さない書き込みを通す Bearer トークンの環境変数名。`null` ならこの経路は開かない |
+| `automation.role` | `"client_publisher"` | トークンが一致したときに与えるロール |
+| `automation.user` | `{ id: "automation", email: "", name: "Automation" }` | `created_by` / `updated_by` に残る利用者 |
 
 環境変数（Pages の設定）で扱うもの:
 
@@ -167,6 +170,25 @@ publish: {
 
 DB に保存済みの `published_url` があるときはそちらを優先して表示するため、
 設定を直したあとに再公開した記事から順に正しい URL になる。
+
+### ブラウザを介さない書き込み（`automation`）
+
+記事生成を自動化していて、外部のプログラムが管理画面と同じ API を叩く場合、
+Cookie セッションを張れないので `Authorization: Bearer <token>` で通す。
+
+```ts
+automation: {
+  tokenEnvVar: "BLOG_AUTOMATION_TOKEN",   // Pages のシークレットに入れる
+  role: "client_publisher",
+  user: { id: "automation", email: "", name: "自動投稿" },
+},
+```
+
+- **既定は `tokenEnvVar: null` で、この経路は開かない。** 名前を指定しても、
+  その環境変数が未設定なら不成立のまま
+- トークンは32文字以上でないと成立しない
+- 一致・不一致にかかわらず同じ回数だけ比較するので、応答時間から答えは漏れない
+- 通ったリクエストは `automation.user` として扱われ、`created_by` / `updated_by` に残る
 
 ### 既定カテゴリの決まり方
 

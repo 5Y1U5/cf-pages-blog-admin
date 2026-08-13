@@ -49,6 +49,12 @@ const DEFAULT_GITHUB = {
 const DEFAULT_PERMISSIONS = {
     deletePost: ["admin"],
 };
+// 既定では開かない経路。環境変数名を指定したサイトでだけ有効になる。
+const DEFAULT_AUTOMATION = {
+    tokenEnvVar: null,
+    role: "client_publisher",
+    user: { id: "automation", email: "", name: "Automation" },
+};
 /**
  * 設定を組み立てる。必須3項目以外は既定値で埋まる。
  * 設定項目が増えたときの追従漏れは、導入側の `tsc --noEmit` が検出する。
@@ -64,6 +70,11 @@ export function defineBlogAdminConfig(input) {
         publish: { ...DEFAULT_PUBLISH, ...(input.publish ?? {}) },
         github: { ...DEFAULT_GITHUB, ...(input.github ?? {}) },
         permissions: { ...DEFAULT_PERMISSIONS, ...(input.permissions ?? {}) },
+        automation: {
+            ...DEFAULT_AUTOMATION,
+            ...(input.automation ?? {}),
+            user: { ...DEFAULT_AUTOMATION.user, ...(input.automation?.user ?? {}) },
+        },
     };
 }
 /**

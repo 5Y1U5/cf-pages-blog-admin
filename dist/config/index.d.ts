@@ -91,6 +91,25 @@ export interface BlogAdminPermissionsConfig {
     /** 記事の物理削除を許可するロール。復元手段が無いため既定は管理者のみ。 */
     deletePost: AdminRole[];
 }
+/**
+ * ブラウザを介さない書き込み（記事生成の自動化など）のための経路。
+ * Cookie セッションを張れないので `Authorization: Bearer <token>` で通す。
+ */
+export interface BlogAdminAutomationConfig {
+    /**
+     * トークンを入れる環境変数名。**既定は `null` で、この経路は開かない。**
+     * 名前を指定しても、その環境変数が未設定なら不成立のまま。
+     */
+    tokenEnvVar: string | null;
+    /** トークンが一致したときに与えるロール。 */
+    role: AdminRole;
+    /** 監査列（`created_by` / `updated_by`）に残る利用者。 */
+    user: {
+        id: string;
+        email: string;
+        name: string;
+    };
+}
 export interface BlogAdminConfig {
     /**
      * D1 の client_id 列に入る値。既存データと必ず一致させること。
@@ -111,6 +130,7 @@ export interface BlogAdminConfig {
     publish: BlogAdminPublishConfig;
     github: BlogAdminGitHubConfig;
     permissions: BlogAdminPermissionsConfig;
+    automation: BlogAdminAutomationConfig;
 }
 /** 既定値を持てない項目。間違えると静かに壊れるため、必ず明示させる。 */
 type RequiredConfigKeys = "clientId" | "defaultAuthor" | "sessionCookieName";
@@ -121,6 +141,7 @@ export type BlogAdminConfigInput = Pick<BlogAdminConfig, RequiredConfigKeys> & {
     publish?: Partial<BlogAdminPublishConfig>;
     github?: Partial<BlogAdminGitHubConfig>;
     permissions?: Partial<BlogAdminPermissionsConfig>;
+    automation?: Partial<BlogAdminAutomationConfig>;
 };
 export declare const DEFAULT_BRAND_LABEL = "BLOG ADMIN";
 /**

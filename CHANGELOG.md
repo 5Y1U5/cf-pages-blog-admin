@@ -17,6 +17,9 @@ Next.js の Route Handler で動くサイト（公開ページが D1 を直接�
   公開ページが D1 を直接読む構成では、コミットは控えでしかないため。
   `"source"` はこれまでどおり、コミットに失敗したら状態を戻して公開しない
 - 編集画面が `warning` を表示するようにした（成功の文言に続けて理由を出す）
+- `automation` を追加（既定 `tokenEnvVar: null` で無効）。ブラウザを介さない書き込みを
+  `Authorization: Bearer <token>` で通す。記事生成を自動化していて外部プログラムが
+  管理画面と同じ API を叩くサイト向け。トークンは32文字以上、比較は時間差が出ない形にしてある
 - `examples/nextjs-route-handlers` を追加
 
 ## 1.0.3

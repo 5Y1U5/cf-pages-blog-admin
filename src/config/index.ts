@@ -103,6 +103,22 @@ export interface BlogAdminPermissionsConfig {
   deletePost: AdminRole[];
 }
 
+/**
+ * ブラウザを介さない書き込み（記事生成の自動化など）のための経路。
+ * Cookie セッションを張れないので `Authorization: Bearer <token>` で通す。
+ */
+export interface BlogAdminAutomationConfig {
+  /**
+   * トークンを入れる環境変数名。**既定は `null` で、この経路は開かない。**
+   * 名前を指定しても、その環境変数が未設定なら不成立のまま。
+   */
+  tokenEnvVar: string | null;
+  /** トークンが一致したときに与えるロール。 */
+  role: AdminRole;
+  /** 監査列（`created_by` / `updated_by`）に残る利用者。 */
+  user: { id: string; email: string; name: string };
+}
+
 export interface BlogAdminConfig {
   /**
    * D1 の client_id 列に入る値。既存データと必ず一致させること。
@@ -127,6 +143,7 @@ export interface BlogAdminConfig {
   publish: BlogAdminPublishConfig;
   github: BlogAdminGitHubConfig;
   permissions: BlogAdminPermissionsConfig;
+  automation: BlogAdminAutomationConfig;
 }
 
 /** 既定値を持てない項目。間違えると静かに壊れるため、必ず明示させる。 */
@@ -139,6 +156,7 @@ export type BlogAdminConfigInput = Pick<BlogAdminConfig, RequiredConfigKeys> & {
   publish?: Partial<BlogAdminPublishConfig>;
   github?: Partial<BlogAdminGitHubConfig>;
   permissions?: Partial<BlogAdminPermissionsConfig>;
+  automation?: Partial<BlogAdminAutomationConfig>;
 };
 
 export const DEFAULT_BRAND_LABEL = "BLOG ADMIN";
@@ -174,6 +192,13 @@ const DEFAULT_PERMISSIONS: BlogAdminPermissionsConfig = {
   deletePost: ["admin"],
 };
 
+// 既定では開かない経路。環境変数名を指定したサイトでだけ有効になる。
+const DEFAULT_AUTOMATION: BlogAdminAutomationConfig = {
+  tokenEnvVar: null,
+  role: "client_publisher",
+  user: { id: "automation", email: "", name: "Automation" },
+};
+
 /**
  * 設定を組み立てる。必須3項目以外は既定値で埋まる。
  * 設定項目が増えたときの追従漏れは、導入側の `tsc --noEmit` が検出する。
@@ -189,6 +214,11 @@ export function defineBlogAdminConfig(input: BlogAdminConfigInput): BlogAdminCon
     publish: { ...DEFAULT_PUBLISH, ...(input.publish ?? {}) },
     github: { ...DEFAULT_GITHUB, ...(input.github ?? {}) },
     permissions: { ...DEFAULT_PERMISSIONS, ...(input.permissions ?? {}) },
+    automation: {
+      ...DEFAULT_AUTOMATION,
+      ...(input.automation ?? {}),
+      user: { ...DEFAULT_AUTOMATION.user, ...(input.automation?.user ?? {}) },
+    },
   };
 }
 

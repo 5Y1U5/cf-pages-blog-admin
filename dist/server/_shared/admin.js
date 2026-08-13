@@ -136,7 +136,45 @@ export async function getSessionUser(request, env, config) {
         return unauthorized();
     return user;
 }
+/**
+ * ブラウザを介さない書き込み用の Bearer トークン認証。
+ *
+ * `automation.tokenEnvVar` が未指定、または指し先の環境変数が未設定・短すぎるときは
+ * 常に不成立にする（設定を入れるまでこの経路は開かない）。
+ * 比較は一致・不一致にかかわらず同じ回数を回し、応答時間から答えが漏れないようにする。
+ */
+function automationUser(request, env, config) {
+    const { tokenEnvVar } = config.automation;
+    if (!tokenEnvVar)
+        return null;
+    const expected = env[tokenEnvVar];
+    if (typeof expected !== "string" || expected.length < 32)
+        return null;
+    const header = request.headers.get("Authorization") || "";
+    const presented = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+    if (presented.length !== expected.length)
+        return null;
+    let diff = 0;
+    for (let i = 0; i < expected.length; i += 1) {
+        diff |= presented.charCodeAt(i) ^ expected.charCodeAt(i);
+    }
+    if (diff !== 0)
+        return null;
+    return {
+        id: config.automation.user.id,
+        email: config.automation.user.email,
+        name: config.automation.user.name,
+        role: config.automation.role,
+        client_id: config.clientId,
+    };
+}
 export async function requireUser(request, env, config, roles) {
+    const machine = automationUser(request, env, config);
+    if (machine) {
+        if (roles && !roles.includes(machine.role))
+            return forbidden();
+        return machine;
+    }
     const user = await getSessionUser(request, env, config);
     if (user instanceof Response)
         return user;

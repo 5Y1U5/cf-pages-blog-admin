@@ -1,3 +1,4 @@
+export { ArticleBody } from "./ArticleBody.js";
 export { AdminLoginClient } from "./AdminLoginClient.js";
 export { AdminLogoutButton } from "./AdminLogoutButton.js";
 export { AdminPostsClient } from "./AdminPostsClient.js";

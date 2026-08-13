@@ -1,3 +1,4 @@
+export { ArticleBody, type ArticleBodyProps } from "./ArticleBody.js";
 export { AdminLoginClient, type AdminLoginClientProps } from "./AdminLoginClient.js";
 export { AdminLogoutButton, type AdminLogoutButtonProps } from "./AdminLogoutButton.js";
 export { AdminPostsClient, type AdminPostsClientProps } from "./AdminPostsClient.js";

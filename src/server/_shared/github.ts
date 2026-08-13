@@ -155,3 +155,17 @@ export async function deleteGitHubFile(
   }
   return { ok: true, commitSha: deleted.data.commit?.sha || null, existed: true };
 }
+
+/**
+ * コミット失敗の Response から、画面に出す1行の説明を取り出す。
+ * 公開を止めずに警告だけ出す `github.mode: "backup"` のサイトで使う。
+ */
+export async function describeCommitFailure(response: Response): Promise<string> {
+  try {
+    const body = (await response.clone().json()) as { message?: string };
+    if (body.message) return body.message;
+  } catch {
+    // JSON でない応答は無視して既定文を返す
+  }
+  return "GitHub へのバックアップに失敗しました。公開そのものは完了しています。";
+}

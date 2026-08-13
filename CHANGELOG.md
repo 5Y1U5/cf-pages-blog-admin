@@ -2,6 +2,27 @@
 
 semver に従う。major に倒す条件は README の「バージョニング」を参照。
 
+## 1.1.0
+
+Next.js の Route Handler で動くサイト（公開ページが D1 を直接読む SSR 構成）を
+載せられるようにした。既存の導入先に必要な作業は無い。追加した設定はすべて任意で、
+既定値は従来の挙動と同じ。
+
+- `server/adapters/next` を追加。Pages Functions 形式のハンドラを Route Handler の
+  export 形（`GET` / `POST` / `PUT` / `DELETE`）へ変換する。
+  env の取り方は実行環境ごとに違うため、導入側が関数で渡す。
+  バインディング名が既定（`ADMIN_DB` / `ADMIN_ASSETS`）と違うサイト向けに `mapEnv()` も入れた
+- `github.mode` を追加（既定 `"source"`）。`"backup"` にすると、公開・取り下げ・削除の
+  GitHub コミットに失敗しても処理そのものは成立し、応答に `warning` が入る。
+  公開ページが D1 を直接読む構成では、コミットは控えでしかないため。
+  `"source"` はこれまでどおり、コミットに失敗したら状態を戻して公開しない
+- 編集画面が `warning` を表示するようにした（成功の文言に続けて理由を出す）
+- `examples/nextjs-route-handlers` を追加
+
+## 1.0.3
+
+- `examples/vite-wouter` の `Link` の import 元が誤っていたのを直した（example のみの修正）
+
 ## 1.0.2
 
 既存サイトの載せ替え検証で見つかった 1.0.1 の不具合修正。設定・API・migration の

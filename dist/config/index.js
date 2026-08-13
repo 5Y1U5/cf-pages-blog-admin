@@ -44,6 +44,7 @@ const DEFAULT_GITHUB = {
     owner: "",
     repo: "",
     branch: "main",
+    mode: "source",
 };
 const DEFAULT_PERMISSIONS = {
     deletePost: ["admin"],

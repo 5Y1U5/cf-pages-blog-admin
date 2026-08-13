@@ -1,6 +1,6 @@
 import { postFilePath, publicPostUrl, resolveDefaultCategory, } from "../../../config/index.js";
 import { badRequest, json, nowIso, requireDb, requireUser } from "../../_shared/admin.js";
-import { upsertGitHubFile } from "../../_shared/github.js";
+import { describeCommitFailure, upsertGitHubFile } from "../../_shared/github.js";
 import { CATEGORY_SELECT, categoryRowsToJson, deriveExcerpt, draftToMarkdown, } from "../../_shared/posts.js";
 const REQUIREMENT_LABELS = {
     title: "タイトル",
@@ -129,18 +129,34 @@ export function createPublishHandlers(config) {
             og_description: ogDescription,
             status: "published",
         };
+        // github.mode が "backup" のサイトは公開ページが D1 を直接読むので、
+        // コミットに失敗しても公開そのものは成立させる（警告だけ返す）。
+        // "source" のサイトはコミットした Markdown が記事の実体なので、失敗したら状態を戻す。
+        const commitIsOptional = config.github.mode === "backup";
+        let warning = null;
+        const failedCommit = async (response) => {
+            if (!commitIsOptional) {
+                await resetPublishingStatus(db, post, user.id);
+                return response;
+            }
+            warning = await describeCommitFailure(response);
+            return null;
+        };
         const categoryJson = categoryRowsToJson(categoryRows);
         const categoryCommit = await upsertGitHubFile(ctx.env, config, config.content.categoriesJsonPath, categoryJson, "chore: update blog categories from admin");
         if (categoryCommit instanceof Response) {
-            await resetPublishingStatus(db, post, user.id);
-            return categoryCommit;
+            const aborted = await failedCommit(categoryCommit);
+            if (aborted)
+                return aborted;
         }
         const markdown = draftToMarkdown(effectivePost, config, categoryRows);
         const postCommit = await upsertGitHubFile(ctx.env, config, postFilePath(config, effectivePost.slug), markdown, `post: publish ${effectivePost.slug} from admin`);
         if (postCommit instanceof Response) {
-            await resetPublishingStatus(db, post, user.id);
-            return postCommit;
+            const aborted = await failedCommit(postCommit);
+            if (aborted)
+                return aborted;
         }
+        const commitSha = postCommit instanceof Response ? null : postCommit.commitSha;
         const publishedUrl = publicPostUrl(config, effectivePost.slug);
         await db
             .prepare(`UPDATE post_drafts
@@ -151,13 +167,14 @@ export function createPublishHandlers(config) {
              updated_by = ?,
              updated_at = ?
          WHERE id = ? AND client_id = ?`)
-            .bind(publishedUrl, postCommit.commitSha, nowIso(), user.id, nowIso(), post.id, user.client_id)
+            .bind(publishedUrl, commitSha, nowIso(), user.id, nowIso(), post.id, user.client_id)
             .run();
         return json({
             ok: true,
             status: "publishing",
             publishedUrl,
-            commitSha: postCommit.commitSha,
+            commitSha,
+            ...(warning ? { warning } : {}),
         });
     };
     return { onRequestPost };

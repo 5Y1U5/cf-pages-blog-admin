@@ -222,6 +222,16 @@ function readPublishedUrl(data: unknown): string | null {
   return typeof value === "string" && value ? value : null;
 }
 
+/**
+ * 処理は成功したが、付随する作業だけ失敗したときの注意書き。
+ * `github.mode: "backup"` のサイトで、控えのコミットに失敗した場合に返る。
+ */
+function readWarning(data: unknown): string | null {
+  if (typeof data !== "object" || data === null) return null;
+  const value = (data as Record<string, unknown>).warning;
+  return typeof value === "string" && value ? value : null;
+}
+
 const REQUIREMENT_LABELS: Record<string, string> = {
   title: "タイトル",
   body: "本文",
@@ -514,7 +524,12 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
     // 連番化された場合、setState は非同期なのでクライアントの slug は古く、
     // 組み立て直すと実際の公開先とずれる。
     setPublishedUrl(readPublishedUrl(data) ?? publicPostUrl(config, slug));
-    setMessage("公開を受け付けました。数分後にサイトへ反映されます。");
+    const publishWarning = readWarning(data);
+    setMessage(
+      publishWarning
+        ? `公開しました。ただし ${publishWarning}`
+        : "公開を受け付けました。数分後にサイトへ反映されます。"
+    );
   }
 
   async function unpublish() {
@@ -545,7 +560,12 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
     }
     setStatus("draft");
     setPublishedUrl("");
-    setMessage("公開取り下げを受け付けました。数分後にサイトから非表示になります。");
+    const unpublishWarning = readWarning(data);
+    setMessage(
+      unpublishWarning
+        ? `公開を取り下げました。ただし ${unpublishWarning}`
+        : "公開取り下げを受け付けました。数分後にサイトから非表示になります。"
+    );
   }
 
   function insertMarkdown(text: string) {

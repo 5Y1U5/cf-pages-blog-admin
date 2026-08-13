@@ -37,6 +37,10 @@
       "types": "./dist/server/handlers/*.d.ts",
       "default": "./dist/server/handlers/*.js"
     },
+    "./server/adapters/*": {
+      "types": "./dist/server/adapters/*.d.ts",
+      "default": "./dist/server/adapters/*.js"
+    },
     "./server/shared/*": {
       "types": "./dist/server/_shared/*.d.ts",
       "default": "./dist/server/_shared/*.js"

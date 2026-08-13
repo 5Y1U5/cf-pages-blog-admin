@@ -1,7 +1,7 @@
 import { postFilePath, type BlogAdminConfig } from "../../../config/index.js";
 import type { BlogAdminEnv } from "../../../config/env.js";
 import { json, nowIso, requireDb, requireUser } from "../../_shared/admin.js";
-import { upsertGitHubFile } from "../../_shared/github.js";
+import { describeCommitFailure, upsertGitHubFile } from "../../_shared/github.js";
 import {
   CATEGORY_SELECT,
   draftToMarkdown,
@@ -44,8 +44,15 @@ export function createUnpublishHandlers(config: BlogAdminConfig) {
       markdown,
       `post: unpublish ${post.slug} from admin`
     );
-    if (postCommit instanceof Response) return postCommit;
+    // github.mode: "backup" のサイトは公開ページが D1 を直接読むため、
+    // コミットに失敗しても取り下げ自体は成立させる（警告だけ返す）。
+    let warning: string | null = null;
+    if (postCommit instanceof Response) {
+      if (config.github.mode !== "backup") return postCommit;
+      warning = await describeCommitFailure(postCommit);
+    }
 
+    const commitSha = postCommit instanceof Response ? null : postCommit.commitSha;
     const now = nowIso();
     await db
       .prepare(
@@ -57,13 +64,14 @@ export function createUnpublishHandlers(config: BlogAdminConfig) {
              updated_at = ?
          WHERE id = ? AND client_id = ?`
       )
-      .bind(postCommit.commitSha, user.id, now, post.id, user.client_id)
+      .bind(commitSha, user.id, now, post.id, user.client_id)
       .run();
 
     return json({
       ok: true,
       status: "draft",
-      commitSha: postCommit.commitSha,
+      commitSha,
+      ...(warning ? { warning } : {}),
     });
   };
 

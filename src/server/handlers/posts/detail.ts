@@ -189,7 +189,9 @@ export function createPostDetailHandlers(config: BlogAdminConfig) {
         post.source_path || postFilePath(config, post.slug),
         `post: delete ${post.slug} from admin`
       );
-      if (removed instanceof Response) return removed;
+      // github.mode: "backup" のサイトは公開ページが D1 を直接読むため、
+      // 控えのファイルを消せなくても記事の削除自体は進める（消し残しは次の公開で上書きされる）。
+      if (removed instanceof Response && config.github.mode !== "backup") return removed;
     }
 
     // 子レコードを後始末してから本体を削除する（revisions は FK 制約あり）。

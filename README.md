@@ -19,7 +19,9 @@ Cloudflare Pages + D1 + R2 で動く、日本語向けのブログ管理画面�
 ## 前提
 
 - Cloudflare Pages Functions / D1 / R2 / GitHub Contents API
-- フロントは Next.js（App Router）と Vite + wouter で動作確認している
+- フロントは Next.js（App Router）と Vite + wouter で動作確認している。
+  サーバー側は Pages Functions のほか、Workers 上の Next.js の Route Handler でも動く
+  （`server/adapters/next` の `toRouteHandlers()` を使う）
 - 導入側の `functions/tsconfig.json` に `@cloudflare/workers-types` が入っていること
   （このパッケージはそれを `dependencies` に持たない）
 
@@ -106,7 +108,8 @@ export default function Page() {
 }
 ```
 
-実例は `examples/nextjs` と `examples/vite-wouter` にある。
+実例は `examples/nextjs`（Pages Functions）、`examples/vite-wouter`、
+`examples/nextjs-route-handlers`（Workers 上の Next.js で API を `app/api/**/route.ts` に置く構成）にある。
 
 ## 設定
 
@@ -130,6 +133,7 @@ export default function Page() {
 | `publish.blockFutureDate` | `true` | 未来日での公開を拒否するか |
 | `publish.publicPathPrefix` | `"/blog"` | 公開 URL の接頭辞。**サイトの実際の記事 URL に合わせる** |
 | `github.owner` / `repo` / `branch` | `""` / `""` / `"main"` | 公開先。環境変数が設定されていればそちらが優先される |
+| `github.mode` | `"source"` | `"source"`＝コミットが記事の実体。失敗したら公開しない。`"backup"`＝実体は D1。失敗しても公開は成立し `warning` を返す |
 | `permissions.deletePost` | `["admin"]` | 記事の物理削除を許可するロール |
 
 環境変数（Pages の設定）で扱うもの:

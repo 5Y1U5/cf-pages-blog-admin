@@ -9,3 +9,8 @@ export declare function deleteGitHubFile(env: BlogAdminEnv, config: BlogAdminCon
     commitSha: string | null;
     existed: boolean;
 } | Response>;
+/**
+ * コミット失敗の Response から、画面に出す1行の説明を取り出す。
+ * 公開を止めずに警告だけ出す `github.mode: "backup"` のサイトで使う。
+ */
+export declare function describeCommitFailure(response: Response): Promise<string>;

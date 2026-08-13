@@ -7,7 +7,7 @@ import {
 } from "../../../config/index.js";
 import type { BlogAdminEnv } from "../../../config/env.js";
 import { badRequest, json, nowIso, requireDb, requireUser } from "../../_shared/admin.js";
-import { upsertGitHubFile } from "../../_shared/github.js";
+import { describeCommitFailure, upsertGitHubFile } from "../../_shared/github.js";
 import {
   CATEGORY_SELECT,
   categoryRowsToJson,
@@ -188,6 +188,21 @@ export function createPublishHandlers(config: BlogAdminConfig) {
       status: "published",
     };
 
+    // github.mode が "backup" のサイトは公開ページが D1 を直接読むので、
+    // コミットに失敗しても公開そのものは成立させる（警告だけ返す）。
+    // "source" のサイトはコミットした Markdown が記事の実体なので、失敗したら状態を戻す。
+    const commitIsOptional = config.github.mode === "backup";
+    let warning: string | null = null;
+
+    const failedCommit = async (response: Response): Promise<Response | null> => {
+      if (!commitIsOptional) {
+        await resetPublishingStatus(db, post, user.id);
+        return response;
+      }
+      warning = await describeCommitFailure(response);
+      return null;
+    };
+
     const categoryJson = categoryRowsToJson(categoryRows);
     const categoryCommit = await upsertGitHubFile(
       ctx.env,
@@ -197,8 +212,8 @@ export function createPublishHandlers(config: BlogAdminConfig) {
       "chore: update blog categories from admin"
     );
     if (categoryCommit instanceof Response) {
-      await resetPublishingStatus(db, post, user.id);
-      return categoryCommit;
+      const aborted = await failedCommit(categoryCommit);
+      if (aborted) return aborted;
     }
 
     const markdown = draftToMarkdown(effectivePost, config, categoryRows);
@@ -210,10 +225,11 @@ export function createPublishHandlers(config: BlogAdminConfig) {
       `post: publish ${effectivePost.slug} from admin`
     );
     if (postCommit instanceof Response) {
-      await resetPublishingStatus(db, post, user.id);
-      return postCommit;
+      const aborted = await failedCommit(postCommit);
+      if (aborted) return aborted;
     }
 
+    const commitSha = postCommit instanceof Response ? null : postCommit.commitSha;
     const publishedUrl = publicPostUrl(config, effectivePost.slug);
     await db
       .prepare(
@@ -228,7 +244,7 @@ export function createPublishHandlers(config: BlogAdminConfig) {
       )
       .bind(
         publishedUrl,
-        postCommit.commitSha,
+        commitSha,
         nowIso(),
         user.id,
         nowIso(),
@@ -241,7 +257,8 @@ export function createPublishHandlers(config: BlogAdminConfig) {
       ok: true,
       status: "publishing",
       publishedUrl,
-      commitSha: postCommit.commitSha,
+      commitSha,
+      ...(warning ? { warning } : {}),
     });
   };
 

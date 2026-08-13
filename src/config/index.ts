@@ -84,6 +84,18 @@ export interface BlogAdminGitHubConfig {
   repo: string;
   /** 非機密。環境変数 GITHUB_BRANCH が設定されていればそちらが優先される。 */
   branch: string;
+  /**
+   * 公開時の GitHub コミットをどう扱うか。
+   *
+   * - `"source"`（既定）… コミットした Markdown が記事の実体。失敗したら公開しない
+   * - `"backup"` … 記事の実体は D1 にあり、コミットは控え。失敗しても公開は成立し、
+   *   応答に `warning` が入る
+   *
+   * 静的サイトジェネレータが Markdown を読んで公開ページを作る構成なら `"source"`。
+   * 公開ページが D1 を直接読む（SSR）構成なら `"backup"`。
+   * SSR 構成で `"source"` のままにすると、GitHub が一時的に落ちただけで公開できなくなる。
+   */
+  mode: "source" | "backup";
 }
 
 export interface BlogAdminPermissionsConfig {
@@ -155,6 +167,7 @@ const DEFAULT_GITHUB: BlogAdminGitHubConfig = {
   owner: "",
   repo: "",
   branch: "main",
+  mode: "source",
 };
 
 const DEFAULT_PERMISSIONS: BlogAdminPermissionsConfig = {

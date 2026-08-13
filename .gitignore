@@ -4,3 +4,6 @@ node_modules/
 *.log
 .DS_Store
 .tsbuildinfo
+
+# 個人メモ（導入先の具体名を含むため公開しない）
+CLAUDE.local.md

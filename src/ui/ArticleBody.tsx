@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
 import {
   renderArticleBlock,
@@ -41,7 +41,10 @@ export function ArticleBody({ content, renderMarkdown }: ArticleBodyProps) {
             dangerouslySetInnerHTML={{ __html: renderArticleBlock(segment) }}
           />
         ) : (
-          <div key={`markdown-${index}`}>{renderMarkdown(segment.text)}</div>
+          // Markdown 部分は要素で包まない。導入先の記事CSSが
+          // `.article-body > * + *` のような直下セレクタで余白を作っていることが多く、
+          // div で包むと段落どうしの余白が消えるため。
+          <Fragment key={`markdown-${index}`}>{renderMarkdown(segment.text)}</Fragment>
         )
       )}
     </>

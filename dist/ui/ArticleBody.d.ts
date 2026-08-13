@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode } from "react";
 export interface ArticleBodyProps {
     /** 記事本文の Markdown。ブロック記法を含んでいてよい。 */
     content: string;

@@ -2,6 +2,12 @@
 
 semver に従う。major に倒す条件は README の「バージョニング」を参照。
 
+## 1.3.1
+
+- `ArticleBody` が Markdown 部分を `div` で包んでいたのをやめた。導入先の記事 CSS が
+  `.article-body > * + *` のような直下セレクタで段落の余白を作っているため、
+  包むと段落どうしの余白が消えていた
+
 ## 1.3.0
 
 - `ArticleBody` を `ui` に追加。react-markdown で本文を描いているサイト向けに、

@@ -1,4 +1,5 @@
 import { jsx as _jsx, Fragment as _Fragment } from "react/jsx-runtime";
+import { Fragment } from "react";
 import { renderArticleBlock, splitArticleContent, } from "../content/article-blocks.js";
 /**
  * 記事本文を描く。ブロック記法の部分だけこのパッケージが組み立て、
@@ -17,5 +18,9 @@ import { renderArticleBlock, splitArticleContent, } from "../content/article-blo
  * ```
  */
 export function ArticleBody({ content, renderMarkdown }) {
-    return (_jsx(_Fragment, { children: splitArticleContent(content).map((segment, index) => segment.kind === "block" ? (_jsx("div", { dangerouslySetInnerHTML: { __html: renderArticleBlock(segment) } }, `block-${index}`)) : (_jsx("div", { children: renderMarkdown(segment.text) }, `markdown-${index}`))) }));
+    return (_jsx(_Fragment, { children: splitArticleContent(content).map((segment, index) => segment.kind === "block" ? (_jsx("div", { dangerouslySetInnerHTML: { __html: renderArticleBlock(segment) } }, `block-${index}`)) : (
+        // Markdown 部分は要素で包まない。導入先の記事CSSが
+        // `.article-body > * + *` のような直下セレクタで余白を作っていることが多く、
+        // div で包むと段落どうしの余白が消えるため。
+        _jsx(Fragment, { children: renderMarkdown(segment.text) }, `markdown-${index}`))) }));
 }

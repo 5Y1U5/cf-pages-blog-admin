@@ -7,6 +7,16 @@ function slugify(input) {
         .replace(/^-+|-+$/g, "")
         .slice(0, 80);
 }
+/**
+ * タイトルから作った slug を URL として使ってよいか。
+ *
+ * 日本語のタイトルでも数字や英字が混ざっていれば slug は空にならないが、
+ * 「3つのコツ」からは "3" しか残らず、記事を表さない URL になってしまう。
+ * 英字を含み、ある程度の長さがあるものだけ採用し、残りは自動採番へ回す。
+ */
+function isUsableSlug(slug) {
+    return slug.length >= 3 && /[a-z]/.test(slug);
+}
 // 日本語のみのタイトルなどで slug が空になる場合の自動採番フォールバック。
 // 例: post-20260615-a1b2c3
 function fallbackSlug() {
@@ -63,8 +73,12 @@ export function createPostsHandlers(config) {
         if (!title)
             return badRequest("タイトルを入力してください。");
         // slug はタイトルから自動生成し、有効化できなければ自動採番する（利用者は触らなくてよい）。
-        const requestedSlug = normalizeString(payload.slug) || slugify(title);
-        const baseSlug = isValidSlug(requestedSlug) ? requestedSlug : fallbackSlug();
+        // 明示指定された slug は形式さえ正しければ尊重する。タイトルから作った slug は、
+        // 記事を表さない短いもの（日本語タイトルの数字だけ等）なら自動採番に回す。
+        const givenSlug = normalizeString(payload.slug);
+        const derivedSlug = slugify(title);
+        const requestedSlug = givenSlug || (isUsableSlug(derivedSlug) ? derivedSlug : "");
+        const baseSlug = requestedSlug && isValidSlug(requestedSlug) ? requestedSlug : fallbackSlug();
         // 同名タイトル等で slug が衝突する場合は連番を付けてユニーク化する。
         const slug = await ensureUniqueSlug(db, user.client_id, baseSlug);
         // カテゴリ・要約・本文は下書き時点では任意（公開時に自動補完する）。

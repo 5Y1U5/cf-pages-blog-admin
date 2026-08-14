@@ -45,6 +45,9 @@
    設定ファイル・`functions/api/admin/**` の再export・ルーターアダプタが生成される
 2. README「使い方」の手作業3点（Tailwind の `@source` / wrangler のバインディング /
    `GITHUB_TOKEN` のシークレット）と、CI への `typecheck:functions` と `check:migrations` 追加
+   `GITHUB_TOKEN` は fine-grained PAT を **Expiration「No expiration」・Only select repositories
+   でそのリポジトリだけ・Contents 読み書きのみ** で作る。期限付きにすると、切れたときに
+   公開が静かに止まる（導入先ごとの保管先は CLAUDE.local.md）
 3. `renovate.json` を既存の導入先からコピーして置き、
    GitHub の Renovate App の対象リポジトリにそのリポジトリを追加（設定画面での操作が要る）
 

@@ -1,5 +1,6 @@
 import { normalizePostType, type BlogAdminConfig } from "../../../config/index.js";
 import type { BlogAdminEnv } from "../../../config/env.js";
+import { recordAudit } from "../../_shared/audit.js";
 import {
   badRequest,
   isValidSlug,
@@ -172,6 +173,13 @@ export function createPostsHandlers(config: BlogAdminConfig) {
         now
       )
       .run();
+
+    await recordAudit(db, ctx.request, user, {
+      action: "post.create",
+      targetType: "post",
+      targetId: id,
+      summary: title,
+    });
 
     return json({ ok: true, post: { id, slug, postType } }, { status: 201 });
   };

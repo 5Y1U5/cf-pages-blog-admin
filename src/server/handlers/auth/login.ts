@@ -11,6 +11,7 @@ import {
   sha256Hex,
   verifyPassword,
 } from "../../_shared/admin.js";
+import { pruneAuditLogs, recordAudit } from "../../_shared/audit.js";
 
 interface LoginPayload {
   email?: string;
@@ -179,6 +180,10 @@ export function createLoginHandlers(config: BlogAdminConfig) {
         new Date().toISOString()
       )
       .run();
+
+    await recordAudit(db, ctx.request, user, { action: "auth.login" });
+    // 保存期間を過ぎた記録の掃除は、書き込みのたびではなくログイン時に1回だけ回す。
+    await pruneAuditLogs(db);
 
     return json(
       {

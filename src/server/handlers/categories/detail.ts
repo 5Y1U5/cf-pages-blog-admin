@@ -1,6 +1,7 @@
 import type { BlogAdminConfig } from "../../../config/index.js";
 import type { BlogAdminEnv } from "../../../config/env.js";
 import { badRequest, json, nowIso, requireDb, requireUser } from "../../_shared/admin.js";
+import { recordAudit } from "../../_shared/audit.js";
 import { upsertGitHubFile } from "../../_shared/github.js";
 import { CATEGORY_SELECT, categoryRowsToJson, type CategoryRow } from "../../_shared/posts.js";
 
@@ -65,6 +66,13 @@ export function createCategoryDetailHandlers(config: BlogAdminConfig) {
         .run();
       return categoryCommit;
     }
+
+    await recordAudit(db, ctx.request, user, {
+      action: "category.delete",
+      targetType: "category",
+      targetId: category.id,
+      summary: category.label,
+    });
 
     return json({ ok: true, category: { id: category.id, slug: category.slug } });
   };

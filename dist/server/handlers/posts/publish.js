@@ -1,5 +1,6 @@
 import { postFilePath, publicPostUrl, resolveDefaultCategory, } from "../../../config/index.js";
 import { badRequest, json, nowIso, requireDb, requireUser } from "../../_shared/admin.js";
+import { recordAudit } from "../../_shared/audit.js";
 import { describeCommitFailure, upsertGitHubFile } from "../../_shared/github.js";
 import { CATEGORY_SELECT, categoryRowsToJson, deriveExcerpt, draftToMarkdown, } from "../../_shared/posts.js";
 const REQUIREMENT_LABELS = {
@@ -156,6 +157,10 @@ export function createPublishHandlers(config) {
             if (aborted)
                 return aborted;
         }
+        else if (postCommit.tokenWarning) {
+            // 期限切れが近いことは公開のたびに気づける場所で伝える。コミット自体は成功している。
+            warning = warning ? `${warning} ${postCommit.tokenWarning}` : postCommit.tokenWarning;
+        }
         const commitSha = postCommit instanceof Response ? null : postCommit.commitSha;
         const publishedUrl = publicPostUrl(config, effectivePost.slug, effectivePost.post_type);
         await db
@@ -169,6 +174,12 @@ export function createPublishHandlers(config) {
          WHERE id = ? AND client_id = ?`)
             .bind(publishedUrl, commitSha, nowIso(), user.id, nowIso(), post.id, user.client_id)
             .run();
+        await recordAudit(db, ctx.request, user, {
+            action: "post.publish",
+            targetType: "post",
+            targetId: post.id,
+            summary: effectivePost.title,
+        });
         return json({
             ok: true,
             status: "publishing",

@@ -58,11 +58,36 @@ function resolveGitHubTarget(
   return { token: env.GITHUB_TOKEN, owner, repo, branch };
 }
 
+/**
+ * トークンの期限が近いことに気づくための警告文。期限が無い / 判定できないときは null。
+ *
+ * GitHub は期限付きのトークンでだけ `github-authentication-token-expiration` を返す。
+ * 無期限のトークンではヘッダ自体が来ないので、ここでは何も言わない
+ * （無期限をやめる判断は運用側の話で、公開のたびに警告を出すことではない）。
+ */
+export const TOKEN_EXPIRY_WARNING_DAYS = 30;
+
+function describeTokenExpiry(headers: Headers): string | null {
+  const raw = headers.get("github-authentication-token-expiration");
+  if (!raw) return null;
+  // 例: "2026-09-13 12:00:00 UTC"。この形をそのまま Date に渡すと環境差が出るため整形する。
+  const parsed = Date.parse(raw.replace(" UTC", "Z").replace(" ", "T"));
+  if (Number.isNaN(parsed)) return null;
+
+  const days = Math.floor((parsed - Date.now()) / (24 * 60 * 60 * 1000));
+  if (days > TOKEN_EXPIRY_WARNING_DAYS) return null;
+  if (days < 0) return "GITHUB_TOKEN の有効期限が切れています。新しいトークンに入れ替えてください。";
+  return `GITHUB_TOKEN の有効期限まであと${days}日です。切れると公開が止まるため、早めに入れ替えてください。`;
+}
+
 async function githubFetch<T>(
   cfg: { token: string },
   url: string,
   init: RequestInit = {}
-): Promise<{ ok: true; data: T } | { ok: false; status: number; body: string }> {
+): Promise<
+  | { ok: true; data: T; tokenWarning: string | null }
+  | { ok: false; status: number; body: string }
+> {
   const res = await fetch(url, {
     ...init,
     headers: {
@@ -75,7 +100,11 @@ async function githubFetch<T>(
   });
   const text = await res.text();
   if (!res.ok) return { ok: false, status: res.status, body: text };
-  return { ok: true, data: text ? (JSON.parse(text) as T) : ({} as T) };
+  return {
+    ok: true,
+    data: text ? (JSON.parse(text) as T) : ({} as T),
+    tokenWarning: describeTokenExpiry(res.headers),
+  };
 }
 
 function contentsUrl(cfg: ResolvedGitHubConfig, path: string): string {
@@ -90,7 +119,9 @@ export async function upsertGitHubFile(
   path: string,
   content: string,
   message: string
-): Promise<{ ok: true; commitSha: string | null } | Response> {
+): Promise<
+  { ok: true; commitSha: string | null; tokenWarning: string | null } | Response
+> {
   const cfg = resolveGitHubTarget(env, config);
   if (cfg instanceof Response) return cfg;
 
@@ -121,7 +152,11 @@ export async function upsertGitHubFile(
   if (!updated.ok) {
     return serverError(githubFailureMessage("write", updated.status, cfg));
   }
-  return { ok: true, commitSha: updated.data.commit?.sha || null };
+  return {
+    ok: true,
+    commitSha: updated.data.commit?.sha || null,
+    tokenWarning: updated.tokenWarning,
+  };
 }
 
 export async function deleteGitHubFile(
@@ -129,7 +164,10 @@ export async function deleteGitHubFile(
   config: BlogAdminConfig,
   path: string,
   message: string
-): Promise<{ ok: true; commitSha: string | null; existed: boolean } | Response> {
+): Promise<
+  | { ok: true; commitSha: string | null; existed: boolean; tokenWarning: string | null }
+  | Response
+> {
   const cfg = resolveGitHubTarget(env, config);
   if (cfg instanceof Response) return cfg;
 
@@ -139,7 +177,9 @@ export async function deleteGitHubFile(
     `${base}?ref=${encodeURIComponent(cfg.branch)}`
   );
   if (!existing.ok) {
-    if (existing.status === 404) return { ok: true, commitSha: null, existed: false };
+    if (existing.status === 404) {
+      return { ok: true, commitSha: null, existed: false, tokenWarning: null };
+    }
     return serverError(githubFailureMessage("read", existing.status, cfg));
   }
   const sha = existing.data.sha;
@@ -153,7 +193,12 @@ export async function deleteGitHubFile(
   if (!deleted.ok) {
     return serverError(githubFailureMessage("write", deleted.status, cfg));
   }
-  return { ok: true, commitSha: deleted.data.commit?.sha || null, existed: true };
+  return {
+    ok: true,
+    commitSha: deleted.data.commit?.sha || null,
+    existed: true,
+    tokenWarning: deleted.tokenWarning,
+  };
 }
 
 /**

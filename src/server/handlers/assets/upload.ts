@@ -15,6 +15,7 @@ import {
   hasDeniedExtension,
   sniffImageMime,
 } from "../../_shared/assets.js";
+import { recordAudit } from "../../_shared/audit.js";
 
 function safeFileName(name: string): string {
   const cleaned = name
@@ -84,6 +85,13 @@ export function createAssetUploadHandlers(config: BlogAdminConfig) {
         nowIso()
       )
       .run();
+
+    await recordAudit(db, ctx.request, user, {
+      action: "asset.upload",
+      targetType: "asset",
+      targetId: id,
+      summary: upload.name,
+    });
 
     return json({
       ok: true,

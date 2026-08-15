@@ -4,6 +4,7 @@ export { AdminLogoutButton, type AdminLogoutButtonProps } from "./AdminLogoutBut
 export { AdminPostsClient, type AdminPostsClientProps } from "./AdminPostsClient.js";
 export { AdminEditorClient, type AdminEditorClientProps } from "./AdminEditorClient.js";
 export { AdminUsersClient, type AdminUsersClientProps } from "./AdminUsersClient.js";
+export { AdminPasswordPanel, type AdminPasswordPanelProps, } from "./AdminPasswordPanel.js";
 export { RichTextEditor, type RichTextEditorHandle, type RichTextEditorProps, } from "./RichTextEditor.js";
 export { cn } from "./cn.js";
 export type { AdminRouter } from "./router.js";

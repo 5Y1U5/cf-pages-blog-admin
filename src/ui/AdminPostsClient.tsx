@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { FileText, Plus, RefreshCw, Trash2, UsersRound } from "lucide-react";
+import { FileText, KeyRound, Plus, RefreshCw, Trash2, UsersRound } from "lucide-react";
 
 import type { AdminRole, BlogAdminConfig } from "../config/index.js";
 import { canEditContent, publicPostUrl } from "../config/index.js";
 import { AdminLogoutButton } from "./AdminLogoutButton.js";
+import { AdminPasswordPanel } from "./AdminPasswordPanel.js";
 import { ADMIN_API, ADMIN_PATHS, editorPath, postApi } from "./paths.js";
 import type { AdminRouter } from "./router.js";
 
@@ -64,6 +65,9 @@ export function AdminPostsClient({ config, router, headerActions }: AdminPostsCl
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<PostTab>("published");
   const [role, setRole] = useState<AdminRole | null>(null);
+  // 管理者が発行したパスワードのままなら、この画面（ログイン後の着地点）で変更を促す。
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const isAdmin = role === "admin";
   // 閲覧専用（client_viewer）は記事を作れないので、新規作成の導線を出さない。
@@ -87,6 +91,13 @@ export function AdminPostsClient({ config, router, headerActions }: AdminPostsCl
     const res = await fetch(ADMIN_API.posts, { cache: "no-store" });
     if (res.status === 401) {
       location.href = ADMIN_PATHS.login;
+      return;
+    }
+    // パスワードの変更が済むまでサーバーが 403 を返す。理由は変更フォームが説明するので、
+    // ここでは読み込み失敗の文言を出さない。
+    if (res.status === 403) {
+      setMessage("");
+      setIsLoading(false);
       return;
     }
     if (!res.ok) {
@@ -149,14 +160,25 @@ export function AdminPostsClient({ config, router, headerActions }: AdminPostsCl
     fetch(ADMIN_API.me, { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok || cancelled) return;
-        const data = (await res.json()) as { user?: { role?: AdminRole } };
+        const data = (await res.json()) as {
+          user?: { role?: AdminRole };
+          mustChangePassword?: boolean;
+        };
         setRole(data.user?.role ?? null);
+        setMustChangePassword(Boolean(data.mustChangePassword));
       })
       .catch(() => undefined);
     fetch(ADMIN_API.posts, { cache: "no-store" })
       .then(async (res) => {
         if (res.status === 401) {
           location.href = ADMIN_PATHS.login;
+          return;
+        }
+        if (res.status === 403) {
+          if (!cancelled) {
+            setMessage("");
+            setIsLoading(false);
+          }
           return;
         }
         if (!res.ok) {
@@ -195,6 +217,14 @@ export function AdminPostsClient({ config, router, headerActions }: AdminPostsCl
             <h1 className="mt-2 text-[26px] font-bold leading-tight">記事一覧</h1>
           </div>
           <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setIsChangingPassword(true)}
+              className="flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background"
+              aria-label="パスワードを変更"
+            >
+              <KeyRound size={18} />
+            </button>
             {isAdmin ? (
               <>
                 {headerActions}
@@ -316,6 +346,20 @@ export function AdminPostsClient({ config, router, headerActions }: AdminPostsCl
         </Link>
       ) : null}
       {isLoading ? null : <div className="h-1" />}
+
+      {mustChangePassword || isChangingPassword ? (
+        <AdminPasswordPanel
+          required={mustChangePassword}
+          onDone={() => {
+            setMustChangePassword(false);
+            setIsChangingPassword(false);
+            setMessage("パスワードを変更しました。");
+            // 変更前は一覧の取得がサーバーに止められているので、ここで読み直す。
+            refresh();
+          }}
+          onClose={() => setIsChangingPassword(false)}
+        />
+      ) : null}
     </main>
   );
 }

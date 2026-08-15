@@ -5,6 +5,10 @@ export { AdminPostsClient, type AdminPostsClientProps } from "./AdminPostsClient
 export { AdminEditorClient, type AdminEditorClientProps } from "./AdminEditorClient.js";
 export { AdminUsersClient, type AdminUsersClientProps } from "./AdminUsersClient.js";
 export {
+  AdminPasswordPanel,
+  type AdminPasswordPanelProps,
+} from "./AdminPasswordPanel.js";
+export {
   RichTextEditor,
   type RichTextEditorHandle,
   type RichTextEditorProps,

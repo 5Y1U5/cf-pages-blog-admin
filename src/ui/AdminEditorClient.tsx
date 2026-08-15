@@ -23,6 +23,7 @@ import {
   resolveDefaultCategory,
 } from "../config/index.js";
 import { AdminLogoutButton } from "./AdminLogoutButton.js";
+import { AdminPasswordPanel } from "./AdminPasswordPanel.js";
 import { RichTextEditor, type RichTextEditorHandle } from "./RichTextEditor.js";
 import {
   MAX_UPLOAD_BYTES,
@@ -292,6 +293,9 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [deletingCategoryId, setDeletingCategoryId] = useState("");
   const [role, setRole] = useState<AdminRole | null>(null);
+  // 発行されたままのパスワードだと、サーバーが保存も公開も 403 で止める。
+  // ここでも変更フォームを出して、記事一覧まで戻らずに直せるようにする。
+  const [mustChangePassword, setMustChangePassword] = useState(false);
 
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
@@ -446,8 +450,12 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
     fetch(ADMIN_API.me, { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) return;
-        const data = (await res.json()) as { user?: { role?: AdminRole } };
+        const data = (await res.json()) as {
+          user?: { role?: AdminRole };
+          mustChangePassword?: boolean;
+        };
         setRole(data.user?.role ?? null);
+        setMustChangePassword(Boolean(data.mustChangePassword));
       })
       .catch(() => undefined);
     void loadCategories();
@@ -1366,6 +1374,16 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
           </button>
         </div>
       </nav>
+
+      {mustChangePassword ? (
+        <AdminPasswordPanel
+          required
+          onDone={() => {
+            setMustChangePassword(false);
+            location.reload();
+          }}
+        />
+      ) : null}
     </main>
   );
 }

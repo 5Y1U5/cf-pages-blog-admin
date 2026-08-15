@@ -34,6 +34,29 @@ function resolveGitHubTarget(env, config) {
     }
     return { token: env.GITHUB_TOKEN, owner, repo, branch };
 }
+/**
+ * トークンの期限が近いことに気づくための警告文。期限が無い / 判定できないときは null。
+ *
+ * GitHub は期限付きのトークンでだけ `github-authentication-token-expiration` を返す。
+ * 無期限のトークンではヘッダ自体が来ないので、ここでは何も言わない
+ * （無期限をやめる判断は運用側の話で、公開のたびに警告を出すことではない）。
+ */
+export const TOKEN_EXPIRY_WARNING_DAYS = 30;
+function describeTokenExpiry(headers) {
+    const raw = headers.get("github-authentication-token-expiration");
+    if (!raw)
+        return null;
+    // 例: "2026-09-13 12:00:00 UTC"。この形をそのまま Date に渡すと環境差が出るため整形する。
+    const parsed = Date.parse(raw.replace(" UTC", "Z").replace(" ", "T"));
+    if (Number.isNaN(parsed))
+        return null;
+    const days = Math.floor((parsed - Date.now()) / (24 * 60 * 60 * 1000));
+    if (days > TOKEN_EXPIRY_WARNING_DAYS)
+        return null;
+    if (days < 0)
+        return "GITHUB_TOKEN の有効期限が切れています。新しいトークンに入れ替えてください。";
+    return `GITHUB_TOKEN の有効期限まであと${days}日です。切れると公開が止まるため、早めに入れ替えてください。`;
+}
 async function githubFetch(cfg, url, init = {}) {
     const res = await fetch(url, {
         ...init,
@@ -48,7 +71,11 @@ async function githubFetch(cfg, url, init = {}) {
     const text = await res.text();
     if (!res.ok)
         return { ok: false, status: res.status, body: text };
-    return { ok: true, data: text ? JSON.parse(text) : {} };
+    return {
+        ok: true,
+        data: text ? JSON.parse(text) : {},
+        tokenWarning: describeTokenExpiry(res.headers),
+    };
 }
 function contentsUrl(cfg, path) {
     return `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${encodeURIComponent(path).replaceAll("%2F", "/")}`;
@@ -79,7 +106,11 @@ export async function upsertGitHubFile(env, config, path, content, message) {
     if (!updated.ok) {
         return serverError(githubFailureMessage("write", updated.status, cfg));
     }
-    return { ok: true, commitSha: updated.data.commit?.sha || null };
+    return {
+        ok: true,
+        commitSha: updated.data.commit?.sha || null,
+        tokenWarning: updated.tokenWarning,
+    };
 }
 export async function deleteGitHubFile(env, config, path, message) {
     const cfg = resolveGitHubTarget(env, config);
@@ -88,8 +119,9 @@ export async function deleteGitHubFile(env, config, path, message) {
     const base = contentsUrl(cfg, path);
     const existing = await githubFetch(cfg, `${base}?ref=${encodeURIComponent(cfg.branch)}`);
     if (!existing.ok) {
-        if (existing.status === 404)
-            return { ok: true, commitSha: null, existed: false };
+        if (existing.status === 404) {
+            return { ok: true, commitSha: null, existed: false, tokenWarning: null };
+        }
         return serverError(githubFailureMessage("read", existing.status, cfg));
     }
     const sha = existing.data.sha;
@@ -103,7 +135,12 @@ export async function deleteGitHubFile(env, config, path, message) {
     if (!deleted.ok) {
         return serverError(githubFailureMessage("write", deleted.status, cfg));
     }
-    return { ok: true, commitSha: deleted.data.commit?.sha || null, existed: true };
+    return {
+        ok: true,
+        commitSha: deleted.data.commit?.sha || null,
+        existed: true,
+        tokenWarning: deleted.tokenWarning,
+    };
 }
 /**
  * コミット失敗の Response から、画面に出す1行の説明を取り出す。

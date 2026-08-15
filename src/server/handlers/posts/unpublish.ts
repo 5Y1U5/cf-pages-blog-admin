@@ -1,6 +1,7 @@
 import { postFilePath, type BlogAdminConfig } from "../../../config/index.js";
 import type { BlogAdminEnv } from "../../../config/env.js";
 import { json, nowIso, requireDb, requireUser } from "../../_shared/admin.js";
+import { recordAudit } from "../../_shared/audit.js";
 import { describeCommitFailure, upsertGitHubFile } from "../../_shared/github.js";
 import {
   CATEGORY_SELECT,
@@ -66,6 +67,13 @@ export function createUnpublishHandlers(config: BlogAdminConfig) {
       )
       .bind(commitSha, user.id, now, post.id, user.client_id)
       .run();
+
+    await recordAudit(db, ctx.request, user, {
+      action: "post.unpublish",
+      targetType: "post",
+      targetId: post.id,
+      summary: post.title,
+    });
 
     return json({
       ok: true,

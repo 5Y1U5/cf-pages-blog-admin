@@ -12,6 +12,7 @@ import {
   requireUser,
   serverError,
 } from "../../_shared/admin.js";
+import { recordAudit } from "../../_shared/audit.js";
 
 interface CategoryPayload {
   slug?: string;
@@ -99,6 +100,13 @@ export function createCategoriesHandlers(config: BlogAdminConfig) {
       }>();
 
     if (!row) return serverError("カテゴリを保存できませんでした。");
+
+    await recordAudit(db, ctx.request, user, {
+      action: "category.create",
+      targetType: "category",
+      targetId: row.id,
+      summary: row.label,
+    });
 
     return json({ ok: true, category: row });
   };

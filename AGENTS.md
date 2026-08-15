@@ -35,6 +35,11 @@
 - **migration を足した** → 導入先で `npx cf-pages-blog-admin sync-migrations` を流し、
   本番 D1 へ適用してからデプロイする。**適用 → デプロイの順を必ず守る**
   （列が無い状態で参照するコードを先に出すと管理画面が全滅する）
+- **新しい API エンドポイントを足した** → 導入先に `functions/api/admin/**` の再 export を
+  1枚足す作業が発生する。これは Renovate の更新 PR では配れないので、
+  **既存のルートに載せられないか先に考えること**（`PUT /api/admin/users/me` がその例）。
+  どうしても足すなら `bin` の `ROUTES` に定義し、導入先で
+  `npx cf-pages-blog-admin sync-routes` を流す。ずれは `check-routes` が CI で検出する
 - **画面の見た目が変わる** → 稼働中サイトは事前に周知が要ることがある
 
 ## 新しいサイトを導入するとき

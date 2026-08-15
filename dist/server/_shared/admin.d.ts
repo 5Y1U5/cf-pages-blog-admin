@@ -7,6 +7,12 @@ export interface AdminUser {
     name: string;
     role: AdminRole;
     client_id: string;
+    /**
+     * 管理者が発行したパスワードのままかどうか。1 のあいだは本人が変えるまで
+     * パスワード変更と自分の情報の取得以外を通さない（`requireUser` が止める）。
+     * migration 0006 が未適用のサイトでは常に 0 になる。
+     */
+    must_change_password: number;
 }
 export declare const JSON_HEADERS: {
     "Content-Type": string;
@@ -35,7 +41,15 @@ export declare const PBKDF2_ITERATIONS = 100000;
 export declare function hashPassword(password: string): Promise<string>;
 export declare function verifyPassword(password: string, passwordHash: string | null): Promise<boolean>;
 export declare function getSessionUser(request: Request, env: BlogAdminEnv, config: BlogAdminConfig): Promise<AdminUser | Response>;
-export declare function requireUser(request: Request, env: BlogAdminEnv, config: BlogAdminConfig, roles?: AdminRole[]): Promise<AdminUser | Response>;
+export interface RequireUserOptions {
+    /**
+     * `must_change_password` が立っていても通すか。
+     * パスワード変更そのものと、自分の状態を取得する経路だけが true になる。
+     */
+    allowPasswordChangePending?: boolean;
+}
+export declare function passwordChangeRequired(): Response;
+export declare function requireUser(request: Request, env: BlogAdminEnv, config: BlogAdminConfig, roles?: AdminRole[], options?: RequireUserOptions): Promise<AdminUser | Response>;
 export declare function sessionCookie(config: BlogAdminConfig, token: string, expires: Date): string;
 export declare function clearSessionCookie(config: BlogAdminConfig): string;
 export declare function normalizeString(value: unknown): string;

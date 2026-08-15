@@ -3,6 +3,8 @@
 //   init              足場（設定・再 export・ページ・migration）を生成する
 //   sync-migrations   パッケージが配る migration を ./migrations へコピーする
 //   check-migrations  コピーがパッケージの中身と一致しているか検証する（CI 用）
+//   sync-routes       Pages Functions の再 export を過不足なく揃える
+//   check-routes      再 export がパッケージのルート定義と一致しているか検証する（CI 用）
 
 import { createHash } from "node:crypto";
 import {
@@ -234,6 +236,83 @@ function assetsPublicFile() {
   return `export { onRequestGet } from "${PACKAGE_NAME}/server/handlers/assets/public";\n`;
 }
 
+// --- sync-routes / check-routes ---------------------------------------------
+
+/**
+ * 生成すべき再 export ファイルの一覧。中身は導入先ごとの設定に依存しないので、
+ * init の対話を通さずにいつでも作り直せる。
+ */
+function routeTargets() {
+  return [
+    ...ROUTES.map((route) => ({
+      path: route.path,
+      contents: routeFile(route),
+      exports: route.exports,
+    })),
+    ...ROUTE_ALIASES.map((alias) => ({
+      path: alias.path,
+      contents: aliasFile(alias),
+      exports: alias.exports,
+    })),
+    {
+      path: "functions/api/admin/assets/public/[key].ts",
+      contents: assetsPublicFile(),
+      exports: ["onRequestGet"],
+    },
+  ];
+}
+
+/**
+ * 再 export の過不足を洗い出す。
+ *
+ * パッケージ側に API を足しても、導入先のこのファイルが古いままだと
+ * 「パッケージは新しいのに画面の一部だけ動かない」状態になり、型検査もビルドも通ってしまう。
+ * ここで見つけて CI で止める。
+ */
+function routeProblems() {
+  const problems = [];
+  for (const target of routeTargets()) {
+    const absolute = resolve(CWD, target.path);
+    if (!existsSync(absolute)) {
+      problems.push({ target, reason: "ファイルがありません" });
+      continue;
+    }
+    const text = readFileSync(absolute, "utf8");
+    const lacking = target.exports.filter(
+      (name) => !new RegExp(`\\b${name}\\b`).test(text)
+    );
+    if (lacking.length > 0) {
+      problems.push({ target, reason: `export が足りません: ${lacking.join(", ")}` });
+    }
+  }
+  return problems;
+}
+
+function checkRoutes() {
+  const problems = routeProblems();
+  if (problems.length > 0) {
+    for (const problem of problems) {
+      process.stderr.write(`  ${problem.target.path}: ${problem.reason}\n`);
+    }
+    fail(
+      "Pages Functions の再 export がパッケージと一致していません。`npx cf-pages-blog-admin sync-routes` を実行してコミットしてください。"
+    );
+  }
+  log(`再 export は一致しています（${routeTargets().length} 件）。`);
+}
+
+function syncRoutes() {
+  const problems = routeProblems();
+  if (problems.length === 0) {
+    log("再 export は最新です。");
+    return;
+  }
+  for (const problem of problems) {
+    writeFile(problem.target.path, problem.target.contents, { force: true });
+  }
+  log(`${problems.length} 件を書き出しました。差分をコミットしてください。`);
+}
+
 function configFile(answers) {
   return `import { defineBlogAdminConfig } from "${PACKAGE_NAME}/config";
 
@@ -422,9 +501,7 @@ async function init(args) {
   writeFile("blog-admin.config.ts", configFile(answers), { force });
 
   log("\nPages Functions（再 export）");
-  for (const route of ROUTES) writeFile(route.path, routeFile(route), { force });
-  for (const alias of ROUTE_ALIASES) writeFile(alias.path, aliasFile(alias), { force });
-  writeFile("functions/api/admin/assets/public/[key].ts", assetsPublicFile(), { force });
+  for (const target of routeTargets()) writeFile(target.path, target.contents, { force });
 
   log("\nルーターアダプタ");
   if (answers.framework === "nextjs") {
@@ -464,6 +541,7 @@ async function init(args) {
 
 3. package.json に次を足す
    "typecheck:functions": "tsc --noEmit -p functions/tsconfig.json"
+   "check:routes": "cf-pages-blog-admin check-routes"
    "db:migrate": "wrangler d1 migrations apply <DB名> --remote"
 
 4. npm run db:migrate でスキーマを流し、管理ユーザーを1人作る
@@ -487,12 +565,20 @@ switch (command) {
   case "check-migrations":
     checkMigrations();
     break;
+  case "sync-routes":
+    syncRoutes();
+    break;
+  case "check-routes":
+    checkRoutes();
+    break;
   default:
     log(`cf-pages-blog-admin <command>
 
   init              足場（設定・再 export・ページ・migration）を生成する
   sync-migrations   パッケージの migration を ./migrations へコピーする
   check-migrations  コピーがパッケージと一致しているか検証する
+  sync-routes       Pages Functions の再 export を過不足なく揃える
+  check-routes      再 export がパッケージのルート定義と一致しているか検証する
 
 init の主なオプション:
   --client-id <値>      D1 の client_id

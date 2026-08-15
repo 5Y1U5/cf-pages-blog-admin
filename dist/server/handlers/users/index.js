@@ -1,5 +1,6 @@
 import { badRequest, hashPassword, json, normalizeString, nowIso, randomId, readJson, requireDb, requireUser, } from "../../_shared/admin.js";
-import { generateInitialPassword, isValidEmail } from "./password.js";
+import { readRecentAuditLogs, recordAudit } from "../../_shared/audit.js";
+import { generateInitialPassword, isValidEmail, setMustChangePassword, } from "./password.js";
 const ROLES = new Set(["admin", "client_publisher", "client_viewer"]);
 function nameFromEmail(email) {
     return email.split("@")[0] || email;
@@ -20,7 +21,10 @@ export function createUsersHandlers(config) {
          ORDER BY role ASC, email ASC`)
             .bind(user.client_id)
             .all();
-        return json({ ok: true, users: results });
+        // 操作の記録も同じ応答に載せる。専用のエンドポイントを足すと導入先に再 export の
+        // ファイルが1枚要るため、既存のルートに同梱して配れるようにしている。
+        const auditLogs = await readRecentAuditLogs(db, user.client_id);
+        return json({ ok: true, users: results, auditLogs });
     };
     const onRequestPost = async (ctx) => {
         const currentUser = await requireUser(ctx.request, ctx.env, config, ["admin"]);
@@ -62,6 +66,14 @@ export function createUsersHandlers(config) {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
             .bind(id, email, name, role, currentUser.client_id, passwordHash, now, now)
             .run();
+        // 初期パスワードは渡す途中に平文が残る。本人が変えるまで印を付けておく。
+        await setMustChangePassword(db, id, true);
+        await recordAudit(db, ctx.request, currentUser, {
+            action: "user.create",
+            targetType: "user",
+            targetId: id,
+            summary: email,
+        });
         return json({
             ok: true,
             user: {

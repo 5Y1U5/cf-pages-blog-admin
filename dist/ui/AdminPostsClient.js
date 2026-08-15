@@ -1,9 +1,10 @@
 "use client";
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useEffect, useMemo, useState } from "react";
-import { FileText, Plus, RefreshCw, Trash2, UsersRound } from "lucide-react";
+import { FileText, KeyRound, Plus, RefreshCw, Trash2, UsersRound } from "lucide-react";
 import { canEditContent, publicPostUrl } from "../config/index.js";
 import { AdminLogoutButton } from "./AdminLogoutButton.js";
+import { AdminPasswordPanel } from "./AdminPasswordPanel.js";
 import { ADMIN_API, ADMIN_PATHS, editorPath, postApi } from "./paths.js";
 const PUBLIC_STATUSES = new Set(["published", "publishing"]);
 const LOAD_ERROR_MESSAGE = "記事一覧を取得できませんでした。時間をおいて再度お試しください。";
@@ -32,6 +33,9 @@ export function AdminPostsClient({ config, router, headerActions }) {
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState("published");
     const [role, setRole] = useState(null);
+    // 管理者が発行したパスワードのままなら、この画面（ログイン後の着地点）で変更を促す。
+    const [mustChangePassword, setMustChangePassword] = useState(false);
+    const [isChangingPassword, setIsChangingPassword] = useState(false);
     const isAdmin = role === "admin";
     // 閲覧専用（client_viewer）は記事を作れないので、新規作成の導線を出さない。
     const canEdit = canEditContent(role);
@@ -45,6 +49,13 @@ export function AdminPostsClient({ config, router, headerActions }) {
         const res = await fetch(ADMIN_API.posts, { cache: "no-store" });
         if (res.status === 401) {
             location.href = ADMIN_PATHS.login;
+            return;
+        }
+        // パスワードの変更が済むまでサーバーが 403 を返す。理由は変更フォームが説明するので、
+        // ここでは読み込み失敗の文言を出さない。
+        if (res.status === 403) {
+            setMessage("");
+            setIsLoading(false);
             return;
         }
         if (!res.ok) {
@@ -105,12 +116,20 @@ export function AdminPostsClient({ config, router, headerActions }) {
                 return;
             const data = (await res.json());
             setRole(data.user?.role ?? null);
+            setMustChangePassword(Boolean(data.mustChangePassword));
         })
             .catch(() => undefined);
         fetch(ADMIN_API.posts, { cache: "no-store" })
             .then(async (res) => {
             if (res.status === 401) {
                 location.href = ADMIN_PATHS.login;
+                return;
+            }
+            if (res.status === 403) {
+                if (!cancelled) {
+                    setMessage("");
+                    setIsLoading(false);
+                }
                 return;
             }
             if (!res.ok) {
@@ -137,7 +156,7 @@ export function AdminPostsClient({ config, router, headerActions }) {
             cancelled = true;
         };
     }, []);
-    return (_jsxs("main", { className: "min-h-screen bg-[rgb(247,247,247)] px-4 pb-24 pt-6", children: [_jsxs("div", { className: "mx-auto max-w-[960px]", children: [_jsxs("div", { className: "flex items-start justify-between gap-3", children: [_jsxs("div", { children: [_jsx("p", { className: "text-[12px] font-bold tracking-[0.28em] text-foreground/50", children: config.brandLabel }), _jsx("h1", { className: "mt-2 text-[26px] font-bold leading-tight", children: "\u8A18\u4E8B\u4E00\u89A7" })] }), _jsxs("div", { className: "flex gap-2", children: [isAdmin ? (_jsxs(_Fragment, { children: [headerActions, _jsxs(Link, { href: ADMIN_PATHS.users, className: "flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background", children: [_jsx(UsersRound, { size: 18 }), _jsx("span", { className: "sr-only", children: "\u30E6\u30FC\u30B6\u30FC\u7BA1\u7406" })] })] })) : null, _jsx("button", { onClick: refresh, className: "flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background", "aria-label": "\u518D\u8AAD\u307F\u8FBC\u307F", children: _jsx(RefreshCw, { size: 18 }) }), _jsx(AdminLogoutButton, {})] })] }), !canEdit ? (_jsx("p", { className: "mt-6 rounded-lg border border-border bg-muted p-4 text-center text-[13px] font-bold text-foreground/75", children: VIEWER_NOTICE })) : null, message ? (_jsx("p", { className: "mt-6 rounded-lg border border-border bg-background p-4 text-[13px]", children: message })) : null, _jsx("div", { className: "mt-6 grid grid-cols-2 rounded-lg border border-border bg-background p-1", children: [
+    return (_jsxs("main", { className: "min-h-screen bg-[rgb(247,247,247)] px-4 pb-24 pt-6", children: [_jsxs("div", { className: "mx-auto max-w-[960px]", children: [_jsxs("div", { className: "flex items-start justify-between gap-3", children: [_jsxs("div", { children: [_jsx("p", { className: "text-[12px] font-bold tracking-[0.28em] text-foreground/50", children: config.brandLabel }), _jsx("h1", { className: "mt-2 text-[26px] font-bold leading-tight", children: "\u8A18\u4E8B\u4E00\u89A7" })] }), _jsxs("div", { className: "flex gap-2", children: [_jsx("button", { type: "button", onClick: () => setIsChangingPassword(true), className: "flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background", "aria-label": "\u30D1\u30B9\u30EF\u30FC\u30C9\u3092\u5909\u66F4", children: _jsx(KeyRound, { size: 18 }) }), isAdmin ? (_jsxs(_Fragment, { children: [headerActions, _jsxs(Link, { href: ADMIN_PATHS.users, className: "flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background", children: [_jsx(UsersRound, { size: 18 }), _jsx("span", { className: "sr-only", children: "\u30E6\u30FC\u30B6\u30FC\u7BA1\u7406" })] })] })) : null, _jsx("button", { onClick: refresh, className: "flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background", "aria-label": "\u518D\u8AAD\u307F\u8FBC\u307F", children: _jsx(RefreshCw, { size: 18 }) }), _jsx(AdminLogoutButton, {})] })] }), !canEdit ? (_jsx("p", { className: "mt-6 rounded-lg border border-border bg-muted p-4 text-center text-[13px] font-bold text-foreground/75", children: VIEWER_NOTICE })) : null, message ? (_jsx("p", { className: "mt-6 rounded-lg border border-border bg-background p-4 text-[13px]", children: message })) : null, _jsx("div", { className: "mt-6 grid grid-cols-2 rounded-lg border border-border bg-background p-1", children: [
                             { value: "published", label: "公開中", count: counts.published },
                             { value: "draft", label: "下書き", count: counts.draft },
                         ].map((tab) => {
@@ -149,5 +168,11 @@ export function AdminPostsClient({ config, router, headerActions }) {
                                                 e.preventDefault();
                                                 e.stopPropagation();
                                                 void deletePost(post);
-                                            }, className: "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-foreground/40 hover:text-foreground", "aria-label": "\u8A18\u4E8B\u3092\u524A\u9664", children: _jsx(Trash2, { size: 16 }) }))] }) }, post.id)))] })] }), canEdit ? (_jsxs(Link, { href: editorPath(), className: "fixed inset-x-4 bottom-4 mx-auto flex h-12 max-w-[480px] items-center justify-center gap-2 rounded-lg bg-foreground text-[15px] font-bold text-background shadow-lg", children: [_jsx(Plus, { size: 18 }), "\u65B0\u898F\u8A18\u4E8B"] })) : null, isLoading ? null : _jsx("div", { className: "h-1" })] }));
+                                            }, className: "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-foreground/40 hover:text-foreground", "aria-label": "\u8A18\u4E8B\u3092\u524A\u9664", children: _jsx(Trash2, { size: 16 }) }))] }) }, post.id)))] })] }), canEdit ? (_jsxs(Link, { href: editorPath(), className: "fixed inset-x-4 bottom-4 mx-auto flex h-12 max-w-[480px] items-center justify-center gap-2 rounded-lg bg-foreground text-[15px] font-bold text-background shadow-lg", children: [_jsx(Plus, { size: 18 }), "\u65B0\u898F\u8A18\u4E8B"] })) : null, isLoading ? null : _jsx("div", { className: "h-1" }), mustChangePassword || isChangingPassword ? (_jsx(AdminPasswordPanel, { required: mustChangePassword, onDone: () => {
+                    setMustChangePassword(false);
+                    setIsChangingPassword(false);
+                    setMessage("パスワードを変更しました。");
+                    // 変更前は一覧の取得がサーバーに止められているので、ここで読み直す。
+                    refresh();
+                }, onClose: () => setIsChangingPassword(false) })) : null] }));
 }

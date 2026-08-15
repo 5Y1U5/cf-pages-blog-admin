@@ -1,10 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, KeyRound, Loader2, Plus, Power, Trash2, UserRound } from "lucide-react";
+import {
+  ArrowLeft,
+  KeyRound,
+  Loader2,
+  Plus,
+  Power,
+  ScrollText,
+  Trash2,
+  UserRound,
+} from "lucide-react";
 
 import type { AdminRole, BlogAdminConfig } from "../config/index.js";
 import { AdminLogoutButton } from "./AdminLogoutButton.js";
+import { AdminPasswordPanel } from "./AdminPasswordPanel.js";
 import { ADMIN_API, ADMIN_PATHS, userApi } from "./paths.js";
 import type { AdminRouter } from "./router.js";
 
@@ -30,6 +40,41 @@ interface PasswordNotice {
   password: string;
 }
 
+interface AuditLogItem {
+  id: string;
+  actor_id: string;
+  actor_email: string | null;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  summary: string | null;
+  ip: string | null;
+  created_at: string;
+}
+
+// 操作の表示名。サーバー側の AuditAction と対応させる。
+// 対応が無い操作は識別子のまま出す（記録が消えるより、読みにくくても残るほうがよい）。
+const AUDIT_ACTION_LABELS: Record<string, string> = {
+  "auth.login": "ログイン",
+  "auth.logout": "ログアウト",
+  "auth.password_change": "パスワード変更（本人）",
+  "post.create": "記事を作成",
+  "post.publish": "記事を公開",
+  "post.unpublish": "記事を取り下げ",
+  "post.delete": "記事を削除",
+  "user.create": "ユーザーを追加",
+  "user.update": "ユーザーを変更",
+  "user.delete": "ユーザーを削除",
+  "user.password_reset": "パスワードを再発行",
+  "category.create": "カテゴリを追加",
+  "category.delete": "カテゴリを削除",
+  "asset.upload": "画像をアップロード",
+};
+
+function auditActionLabel(action: string): string {
+  return AUDIT_ACTION_LABELS[action] || action;
+}
+
 export interface AdminUsersClientProps {
   config: BlogAdminConfig;
   router: AdminRouter;
@@ -45,6 +90,8 @@ export function AdminUsersClient({ router }: AdminUsersClientProps) {
   const [name, setName] = useState("");
   const [role, setRole] = useState<AdminRole>("client_publisher");
   const [passwordNotice, setPasswordNotice] = useState<PasswordNotice | null>(null);
+  const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
   const [busyId, setBusyId] = useState("");
 
   useEffect(() => {
@@ -56,8 +103,15 @@ export function AdminUsersClient({ router }: AdminUsersClientProps) {
           return;
         }
         if (res.status === 403) {
+          // 403 は「管理者ではない」場合と「パスワードの変更が必要」な場合がある。
+          const reason = (await res.json().catch(() => ({}))) as { error?: string };
           if (!cancelled) {
-            setMessage("ユーザー管理は管理者のみ利用できます。");
+            if (reason.error === "password_change_required") {
+              setMustChangePassword(true);
+              setMessage("");
+            } else {
+              setMessage("ユーザー管理は管理者のみ利用できます。");
+            }
             setIsLoading(false);
           }
           return;
@@ -69,9 +123,13 @@ export function AdminUsersClient({ router }: AdminUsersClientProps) {
           }
           return;
         }
-        const data = (await res.json()) as { users?: AdminUserItem[] };
+        const data = (await res.json()) as {
+          users?: AdminUserItem[];
+          auditLogs?: AuditLogItem[];
+        };
         if (!cancelled) {
           setUsers(data.users || []);
+          setAuditLogs(data.auditLogs || []);
           setMessage("");
           setIsLoading(false);
         }
@@ -367,7 +425,52 @@ export function AdminUsersClient({ router }: AdminUsersClientProps) {
             </div>
           )}
         </section>
+
+        <section className="mt-6 rounded-lg border border-border bg-background">
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="flex items-center gap-2 text-[15px] font-bold">
+              <ScrollText size={16} />
+              操作ログ
+            </h2>
+            <p className="mt-1 text-[12px] text-foreground/55">
+              直近の記録を新しい順に表示します。記録が始まる前の操作は残っていません。
+            </p>
+          </div>
+          {auditLogs.length === 0 ? (
+            <p className="p-4 text-[13px] text-foreground/60">
+              {isLoading ? "読み込み中..." : "記録はまだありません。"}
+            </p>
+          ) : (
+            <div className="divide-y divide-border">
+              {auditLogs.map((log) => (
+                <div key={log.id} className="px-4 py-3">
+                  <p className="flex flex-wrap items-center gap-2 text-[13px] font-bold">
+                    {auditActionLabel(log.action)}
+                    <span className="font-normal text-foreground/55">
+                      {new Date(log.created_at).toLocaleString("ja-JP")}
+                    </span>
+                  </p>
+                  <p className="mt-1 break-all text-[12px] text-foreground/60">
+                    {log.actor_email || log.actor_id}
+                    {log.summary ? ` / ${log.summary}` : ""}
+                    {log.ip ? ` / ${log.ip}` : ""}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
+
+      {mustChangePassword ? (
+        <AdminPasswordPanel
+          required
+          onDone={() => {
+            setMustChangePassword(false);
+            location.reload();
+          }}
+        />
+      ) : null}
     </main>
   );
 }

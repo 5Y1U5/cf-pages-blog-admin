@@ -1,5 +1,6 @@
 import { normalizePostType, postFilePath, } from "../../../config/index.js";
 import { badRequest, json, normalizeString, nowIso, randomId, readJson, requireDb, requireUser, } from "../../_shared/admin.js";
+import { recordAudit } from "../../_shared/audit.js";
 import { deleteGitHubFile } from "../../_shared/github.js";
 import { deriveExcerpt } from "../../_shared/posts.js";
 const EDITABLE_STATUSES = ["draft", "review", "approved", "archived"];
@@ -134,6 +135,12 @@ export function createPostDetailHandlers(config) {
         if (result.meta.changes === 0) {
             return json({ ok: false, error: "not_found" }, { status: 404 });
         }
+        await recordAudit(db, ctx.request, user, {
+            action: "post.delete",
+            targetType: "post",
+            targetId: post.id,
+            summary: post.slug,
+        });
         return json({ ok: true });
     };
     return { onRequestGet, onRequestPut, onRequestDelete };

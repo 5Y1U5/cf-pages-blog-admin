@@ -1,5 +1,6 @@
 import { badRequest, json, nowIso, randomId, requireDb, requireUser, serverError, } from "../../_shared/admin.js";
 import { ALLOWED_IMAGE_MIME, MAX_UPLOAD_BYTES, hasDeniedExtension, sniffImageMime, } from "../../_shared/assets.js";
+import { recordAudit } from "../../_shared/audit.js";
 function safeFileName(name) {
     const cleaned = name
         .toLowerCase()
@@ -56,6 +57,12 @@ export function createAssetUploadHandlers(config) {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
             .bind(id, user.client_id, postId, key, publicPath, upload.name, detected, upload.size, alt || null, user.id, nowIso())
             .run();
+        await recordAudit(db, ctx.request, user, {
+            action: "asset.upload",
+            targetType: "asset",
+            targetId: id,
+            summary: upload.name,
+        });
         return json({
             ok: true,
             asset: {

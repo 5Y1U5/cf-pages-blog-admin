@@ -1,4 +1,5 @@
 import { badRequest, json, normalizeString, randomId, readJson, requireDb, sessionCookie, sha256Hex, verifyPassword, } from "../../_shared/admin.js";
+import { pruneAuditLogs, recordAudit } from "../../_shared/audit.js";
 // ログイン総当たり対策：同一メールが ATTEMPT_WINDOW 内に MAX_FAILED 回失敗したら一時ロック。
 const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILED_ATTEMPTS = 5;
@@ -105,6 +106,9 @@ export function createLoginHandlers(config) {
          VALUES (?, ?, ?, ?, ?)`)
             .bind(randomId("ses"), user.id, tokenHash, expires.toISOString(), new Date().toISOString())
             .run();
+        await recordAudit(db, ctx.request, user, { action: "auth.login" });
+        // 保存期間を過ぎた記録の掃除は、書き込みのたびではなくログイン時に1回だけ回す。
+        await pruneAuditLogs(db);
         return json({
             ok: true,
             user: {

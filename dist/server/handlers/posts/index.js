@@ -1,4 +1,5 @@
 import { normalizePostType } from "../../../config/index.js";
+import { recordAudit } from "../../_shared/audit.js";
 import { badRequest, isValidSlug, json, normalizeString, nowIso, randomId, readJson, requireDb, requireUser, } from "../../_shared/admin.js";
 import { deriveExcerpt } from "../../_shared/posts.js";
 function slugify(input) {
@@ -104,6 +105,12 @@ export function createPostsHandlers(config) {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)`)
             .bind(id, user.client_id, postType, slug, title, date, categorySlug, categoryLabel, excerpt, payload.heroImageKey || null, payload.heroImageAlt || null, normalizeString(payload.author) || config.defaultAuthor, payload.authorRole || null, bodyMarkdown, payload.ogDescription || null, JSON.stringify(Array.isArray(payload.tags) ? payload.tags : []), JSON.stringify(Array.isArray(payload.faq) ? payload.faq : []), user.id, user.id, now, now)
             .run();
+        await recordAudit(db, ctx.request, user, {
+            action: "post.create",
+            targetType: "post",
+            targetId: id,
+            summary: title,
+        });
         return json({ ok: true, post: { id, slug, postType } }, { status: 201 });
     };
     return { onRequestGet, onRequestPost };

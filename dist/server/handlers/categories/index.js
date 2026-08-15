@@ -1,4 +1,5 @@
 import { badRequest, isValidSlug, json, normalizeString, nowIso, randomId, readJson, requireDb, requireUser, serverError, } from "../../_shared/admin.js";
+import { recordAudit } from "../../_shared/audit.js";
 export function createCategoriesHandlers(config) {
     const onRequestGet = async (ctx) => {
         const user = await requireUser(ctx.request, ctx.env, config);
@@ -65,6 +66,12 @@ export function createCategoriesHandlers(config) {
             .first();
         if (!row)
             return serverError("カテゴリを保存できませんでした。");
+        await recordAudit(db, ctx.request, user, {
+            action: "category.create",
+            targetType: "category",
+            targetId: row.id,
+            summary: row.label,
+        });
         return json({ ok: true, category: row });
     };
     return { onRequestGet, onRequestPost };

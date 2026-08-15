@@ -9,6 +9,12 @@ export interface AdminUser {
   name: string;
   role: AdminRole;
   client_id: string;
+  /**
+   * 管理者が発行したパスワードのままかどうか。1 のあいだは本人が変えるまで
+   * パスワード変更と自分の情報の取得以外を通さない（`requireUser` が止める）。
+   * migration 0006 が未適用のサイトでは常に 0 になる。
+   */
+  must_change_password: number;
 }
 
 export const JSON_HEADERS = {
@@ -168,6 +174,16 @@ export async function verifyPassword(
 // Cookie 上書き（cookie injection）を防げる。本番は HTTPS なので利用可能。
 // Cookie 名は設定の1か所だけで定義し、login / logout / 検証はすべてそれを参照する。
 
+function sessionUserSelect(withPasswordFlag: boolean): string {
+  const flag = withPasswordFlag ? ", users.must_change_password" : "";
+  return `SELECT users.id, users.email, users.name, users.role, users.client_id${flag}
+       FROM sessions
+       INNER JOIN users ON users.id = sessions.user_id
+       WHERE sessions.token_hash = ? AND sessions.expires_at > ?
+         AND users.is_active = 1
+       LIMIT 1`;
+}
+
 export async function getSessionUser(
   request: Request,
   env: BlogAdminEnv,
@@ -180,17 +196,28 @@ export async function getSessionUser(
   if (!token) return unauthorized();
 
   const tokenHash = await sha256Hex(token);
-  const user = await db
-    .prepare(
-      `SELECT users.id, users.email, users.name, users.role, users.client_id
-       FROM sessions
-       INNER JOIN users ON users.id = sessions.user_id
-       WHERE sessions.token_hash = ? AND sessions.expires_at > ?
-         AND users.is_active = 1
-       LIMIT 1`
-    )
-    .bind(tokenHash, nowIso())
-    .first<AdminUser>();
+  const now = nowIso();
+
+  // must_change_password は migration 0006 で足した列。未適用のサイトでこの SELECT が
+  // 落ちると管理画面が丸ごと使えなくなるため、失敗したら列を外して引き直す。
+  // その場合は「変更を促さない」という 0006 以前の挙動になるだけで、認証は通る。
+  let user: AdminUser | null = null;
+  try {
+    user = await db
+      .prepare(sessionUserSelect(true))
+      .bind(tokenHash, now)
+      .first<AdminUser>();
+  } catch (error) {
+    console.warn(
+      "must_change_password was not read (migration 0006 may be missing).",
+      error instanceof Error ? error.message : error
+    );
+    const fallback = await db
+      .prepare(sessionUserSelect(false))
+      .bind(tokenHash, now)
+      .first<Omit<AdminUser, "must_change_password">>();
+    user = fallback ? { ...fallback, must_change_password: 0 } : null;
+  }
 
   if (!user) return unauthorized();
   return user;
@@ -230,14 +257,37 @@ function automationUser(
     name: config.automation.user.name,
     role: config.automation.role,
     client_id: config.clientId,
+    // トークンは users に実在しない利用者なので、変更を促す対象にならない。
+    must_change_password: 0,
   };
+}
+
+export interface RequireUserOptions {
+  /**
+   * `must_change_password` が立っていても通すか。
+   * パスワード変更そのものと、自分の状態を取得する経路だけが true になる。
+   */
+  allowPasswordChangePending?: boolean;
+}
+
+export function passwordChangeRequired(): Response {
+  return json(
+    {
+      ok: false,
+      error: "password_change_required",
+      message:
+        "管理者が発行したパスワードのままです。パスワードを変更してから操作してください。",
+    },
+    { status: 403 }
+  );
 }
 
 export async function requireUser(
   request: Request,
   env: BlogAdminEnv,
   config: BlogAdminConfig,
-  roles?: AdminRole[]
+  roles?: AdminRole[],
+  options?: RequireUserOptions
 ): Promise<AdminUser | Response> {
   const machine = automationUser(request, env, config);
   if (machine) {
@@ -248,6 +298,11 @@ export async function requireUser(
   const user = await getSessionUser(request, env, config);
   if (user instanceof Response) return user;
   if (roles && !roles.includes(user.role)) return forbidden();
+  // 発行されたままのパスワードでは、変更以外の操作をさせない。
+  // 画面を出さないだけでは、API を直接叩けば素通りしてしまうためここで止める。
+  if (!options?.allowPasswordChangePending && user.must_change_password === 1) {
+    return passwordChangeRequired();
+  }
   return user;
 }
 

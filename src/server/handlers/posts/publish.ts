@@ -7,6 +7,7 @@ import {
 } from "../../../config/index.js";
 import type { BlogAdminEnv } from "../../../config/env.js";
 import { badRequest, json, nowIso, requireDb, requireUser } from "../../_shared/admin.js";
+import { recordAudit } from "../../_shared/audit.js";
 import { describeCommitFailure, upsertGitHubFile } from "../../_shared/github.js";
 import {
   CATEGORY_SELECT,
@@ -227,6 +228,9 @@ export function createPublishHandlers(config: BlogAdminConfig) {
     if (postCommit instanceof Response) {
       const aborted = await failedCommit(postCommit);
       if (aborted) return aborted;
+    } else if (postCommit.tokenWarning) {
+      // 期限切れが近いことは公開のたびに気づける場所で伝える。コミット自体は成功している。
+      warning = warning ? `${warning} ${postCommit.tokenWarning}` : postCommit.tokenWarning;
     }
 
     const commitSha = postCommit instanceof Response ? null : postCommit.commitSha;
@@ -252,6 +256,13 @@ export function createPublishHandlers(config: BlogAdminConfig) {
         user.client_id
       )
       .run();
+
+    await recordAudit(db, ctx.request, user, {
+      action: "post.publish",
+      targetType: "post",
+      targetId: post.id,
+      summary: effectivePost.title,
+    });
 
     return json({
       ok: true,

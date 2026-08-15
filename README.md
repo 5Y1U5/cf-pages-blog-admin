@@ -32,7 +32,7 @@ Cloudflare Pages + D1 + R2 で動く、日本語向けのブログ管理画面�
 npm レジストリには publish していない。public リポジトリの git 依存として入れる。認証は不要。
 
 ```
-npm i "github:5Y1U5/cf-pages-blog-admin#v1.0.2"
+npm i "github:5Y1U5/cf-pages-blog-admin#v2.0.0"
 ```
 
 ## 使い方

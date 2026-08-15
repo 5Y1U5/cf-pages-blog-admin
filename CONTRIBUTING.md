@@ -13,6 +13,7 @@ npm run check
 2. `check:safe` — 公開してはいけないものが混入していないか検査する
 3. `check:classnames` — Tailwind のクラス名を文字列連結で組み立てていないか検査する
 4. `build` — `dist` を作り直す
+5. `test` — `node:sqlite` で D1 を模し、`dist` のハンドラを Pages Functions と同じ形で呼ぶ
 
 ### 型検査が2本ある理由
 

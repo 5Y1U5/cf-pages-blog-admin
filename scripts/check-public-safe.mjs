@@ -13,7 +13,13 @@ import { join, relative, resolve } from "node:path";
 const ROOT = resolve(process.argv[2] || ".");
 const SKIP_DIRS = new Set([".git", "node_modules", "dist", ".next", "out"]);
 // 検査パターンを持つファイル自身は対象外にする（パターンがパターンに一致してしまうため）。
-const SKIP_FILES = new Set(["package-lock.json", "check-public-safe.mjs"]);
+// CLAUDE.local.md は .gitignore 済みで、公開できない具体名を置くための場所。
+// 検査すると必ず引っかかるが、コミットされないので公開のしようがない。
+const SKIP_FILES = new Set([
+  "package-lock.json",
+  "check-public-safe.mjs",
+  "CLAUDE.local.md",
+]);
 const BINARY_EXTENSIONS = /\.(png|jpe?g|gif|webp|ico|pdf|woff2?|ttf|zip|tgz)$/i;
 
 const CHECKS = [

@@ -389,8 +389,13 @@ semver。タグは `v1.2.3` 形式で、`package.json` の `version` と必ず�
 
 ```
 npm install
-npm run check    # 型検査 → 公開前チェック → クラス名チェック → ビルド
+npm run check    # 型検査 → 公開前チェック → クラス名チェック → ビルド → テスト
+npm test         # テストだけ流す
 ```
+
+テストは `node:sqlite` で D1 を模して、`dist` のハンドラを Pages Functions と同じ形で呼ぶ
+（配布されるものをそのまま試している）。migration を途中までしか流していない状態も再現できるので、
+**列やテーブルが無いサイトで管理画面が止まらないこと**を確かめるのに使う。
 
 `dist` はリポジトリにコミットする（git 依存でそのまま install できるようにするため）。
 `src` を直したら `npm run build` して `dist` も一緒にコミットすること。CI がずれを検出する。

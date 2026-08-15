@@ -57,7 +57,8 @@
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.ui.json --noEmit",
     "check:safe": "node scripts/check-public-safe.mjs",
     "check:classnames": "node scripts/check-classnames.mjs",
-    "check": "npm run typecheck && npm run check:safe && npm run check:classnames && npm run build",
+    "test": "node --test \"test/*.test.mjs\"",
+    "check": "npm run typecheck && npm run check:safe && npm run check:classnames && npm run build && npm test",
     "preversion": "npm run check",
     "version": "npm run build && git add dist",
     "postversion": "git push --follow-tags"

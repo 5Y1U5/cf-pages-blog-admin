@@ -269,6 +269,17 @@ function routeTargets() {
  * 「パッケージは新しいのに画面の一部だけ動かない」状態になり、型検査もビルドも通ってしまう。
  * ここで見つけて CI で止める。
  */
+/**
+ * 比較用に空白を潰す。
+ *
+ * 「export 名がファイルに含まれるか」だけで見ると、名前がコメントに残っているファイルや、
+ * 別のハンドラを繋いだファイルを通してしまうので、中身そのものを突き合わせる。
+ * ただし導入先の formatter が改行位置を変えるだけの差で落とさないよう、空白は無視する。
+ */
+function normalizeRouteText(text) {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 function routeProblems() {
   const problems = [];
   for (const target of routeTargets()) {
@@ -278,12 +289,19 @@ function routeProblems() {
       continue;
     }
     const text = readFileSync(absolute, "utf8");
+    if (normalizeRouteText(text) === normalizeRouteText(target.contents)) continue;
+
+    // 何がずれているかを一言で出す。export の不足が一番多く、次が繋ぎ先の違い。
     const lacking = target.exports.filter(
-      (name) => !new RegExp(`\\b${name}\\b`).test(text)
+      (name) => !new RegExp(`\\bexport\\b[\\s\\S]{0,200}?\\b${name}\\b`).test(text)
     );
-    if (lacking.length > 0) {
-      problems.push({ target, reason: `export が足りません: ${lacking.join(", ")}` });
-    }
+    problems.push({
+      target,
+      reason:
+        lacking.length > 0
+          ? `export が足りません: ${lacking.join(", ")}`
+          : "内容がパッケージの定義と違います",
+    });
   }
   return problems;
 }

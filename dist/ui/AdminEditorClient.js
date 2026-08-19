@@ -2,11 +2,13 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, ChevronDown, Eye, EyeOff, ImagePlus, Loader2, Plus, Save, Send, Trash2, } from "lucide-react";
+import { renderArticleBlock, splitArticleContent } from "../content/article-blocks.js";
 import { canEditContent, clientPublishRequirements, publicPostUrl, resolveDefaultCategory, } from "../config/index.js";
 import { AdminLogoutButton } from "./AdminLogoutButton.js";
 import { AdminPasswordPanel } from "./AdminPasswordPanel.js";
 import { RichTextEditor } from "./RichTextEditor.js";
 import { MAX_UPLOAD_BYTES, formatBytes, prepareImageForUpload, translateUploadError, } from "./lib/admin-image.js";
+import { markdownToHtml } from "./lib/admin-markdown.js";
 import { ADMIN_API, ADMIN_PATHS, categoryApi, editorPath, postApi, } from "./paths.js";
 const EDITOR_MODE_STORAGE_KEY = "admin-editor-mode";
 const emptyBody = `## 見出しを入力
@@ -73,47 +75,45 @@ function stringifyFaq(value) {
         return "";
     }
 }
-/** ブロック記法をプレビューでどう呼ぶか。実際の見た目は公開ページ側の CSS で決まる。 */
-const BLOCK_LABELS = {
-    callout: "要点ボックス",
-    points: "ポイントカード",
-    compare: "比較カード",
-    stat: "数字ハイライト",
-    faq: "よくある質問",
-};
-function markdownPreview(markdown) {
-    return markdown
-        .split("\n")
-        .map((raw) => raw.trim())
-        .filter(Boolean)
-        .map((line) => {
-        // ブロック記法は編集画面では簡易表示にとどめる（公開ページでカードとして出る）。
-        const blockOpen = line.match(/^:::([a-z]+)[ 　]*(.*)$/);
-        if (blockOpen) {
-            const label = BLOCK_LABELS[blockOpen[1] || ""];
-            if (label) {
-                const arg = (blockOpen[2] || "").trim();
-                return { kind: "block", text: arg ? `${label}：${arg}` : label };
-            }
-        }
-        if (/^:::[ 　]*$/.test(line))
-            return { kind: "skip", text: "" };
-        const image = line.match(/^!\[(.*)]\((.*)\)$/);
-        if (image) {
-            return { kind: "image", text: "", alt: image[1] || "", src: image[2] || "" };
-        }
-        if (line.startsWith("### "))
-            return { kind: "h3", text: line.replace(/^### /, "") };
-        if (line.startsWith("## "))
-            return { kind: "h2", text: line.replace(/^## /, "") };
-        if (line.startsWith("# "))
-            return { kind: "h1", text: line.replace(/^# /, "") };
-        if (line.startsWith("- "))
-            return { kind: "li", text: line.replace(/^- /, "") };
-        return { kind: "p", text: line };
-    })
-        .filter((block) => block.kind !== "skip");
-}
+const PREVIEW_ARTICLE_CSS = `
+.admin-article-preview .admin-markdown-preview > *:first-child { margin-top: 0; }
+.admin-article-preview .admin-markdown-preview > *:last-child { margin-bottom: 0; }
+.admin-article-preview h1 { margin: 0 0 18px; font-size: 24px; line-height: 1.35; font-weight: 800; }
+.admin-article-preview h2 { margin: 30px 0 14px; padding-left: 12px; border-left: 4px solid #0f172a; font-size: 22px; line-height: 1.45; font-weight: 800; }
+.admin-article-preview h3 { margin: 24px 0 10px; font-size: 18px; line-height: 1.55; font-weight: 800; }
+.admin-article-preview p { margin: 0 0 16px; line-height: 2; }
+.admin-article-preview ul, .admin-article-preview ol { margin: 0 0 18px; padding-left: 1.5em; line-height: 1.9; }
+.admin-article-preview li + li { margin-top: 6px; }
+.admin-article-preview img { width: 100%; border-radius: 12px; object-fit: cover; }
+.admin-article-preview table { width: 100%; margin: 20px 0 24px; border-collapse: collapse; font-size: 14px; }
+.admin-article-preview th, .admin-article-preview td { padding: 12px 14px; text-align: left; border: 1px solid #dde3ec; vertical-align: top; }
+.admin-article-preview th { background: #f2f6fb; color: #082f60; font-weight: 800; }
+.admin-article-preview blockquote { margin: 22px 0; padding: 16px 18px; border-left: 4px solid #38bdf8; border-radius: 10px; background: #f4f8fb; color: #334155; }
+.admin-article-preview .blog-callout { display: flex; align-items: flex-start; gap: 14px; margin: 26px 0; padding: 18px 20px; background: #f4f8fb; border-left: 4px solid #38bdf8; border-radius: 12px; }
+.admin-article-preview .blog-callout-icon { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; background: rgba(56, 189, 248, .16); color: #075985; }
+.admin-article-preview .blog-callout-icon svg { width: 18px; height: 18px; }
+.admin-article-preview .blog-callout-text { flex: 1; font-size: 14px; line-height: 1.9; }
+.admin-article-preview .blog-callout-text strong { display: block; margin-bottom: 4px; color: #0f172a; }
+.admin-article-preview .blog-points, .admin-article-preview .blog-compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 26px 0; }
+.admin-article-preview .blog-point { padding: 16px 18px; border: 1px solid #dfe6ee; border-radius: 12px; background: #fff; }
+.admin-article-preview .blog-point-label { display: block; margin-bottom: 6px; color: #0369a1; font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+.admin-article-preview .blog-point-text { margin: 0; font-size: 14px; line-height: 1.8; }
+.admin-article-preview .blog-compare-card { padding: 16px 18px; border-radius: 12px; background: #f5f6f8; }
+.admin-article-preview .blog-compare-card.is-after { background: rgba(56, 189, 248, .1); border: 1px solid rgba(56, 189, 248, .35); }
+.admin-article-preview .blog-compare-label { margin-bottom: 6px; font-size: 11px; font-weight: 800; letter-spacing: .12em; color: #64748b; }
+.admin-article-preview .blog-compare-card.is-after .blog-compare-label { color: #0369a1; }
+.admin-article-preview .blog-compare-text { font-size: 14px; line-height: 1.8; }
+.admin-article-preview .blog-stat { margin: 26px 0; padding: 26px 16px; border-radius: 16px; background: #f4f8fb; text-align: center; }
+.admin-article-preview .blog-stat-number { display: block; margin-bottom: 6px; color: #0f172a; font-size: 38px; font-weight: 800; line-height: 1.1; }
+.admin-article-preview .blog-stat-text { font-size: 13px; color: #64748b; }
+.admin-article-preview .blog-faq { margin-top: 38px; padding-top: 28px; border-top: 1px solid #dfe6ee; }
+.admin-article-preview .blog-faq h2 { margin: 0 0 18px; }
+.admin-article-preview .blog-faq details { margin-bottom: 12px; padding: 16px 20px; border: 1px solid #dfe6ee; border-radius: 12px; }
+.admin-article-preview .blog-faq details[open] { border-color: #38bdf8; }
+.admin-article-preview .blog-faq summary { cursor: pointer; font-size: 14px; font-weight: 800; }
+.admin-article-preview .blog-faq details div { margin-top: 10px; font-size: 14px; line-height: 1.9; color: #475569; }
+@media (max-width: 640px) { .admin-article-preview .blog-points, .admin-article-preview .blog-compare { grid-template-columns: 1fr; } }
+`;
 function statusLabel(status) {
     const labels = {
         draft: "下書き",
@@ -222,7 +222,7 @@ export function AdminEditorClient({ config, router }) {
     // 編集・公開できるのは admin / client_publisher のみ（client_viewer は閲覧専用）。
     // サーバー側 RBAC と一致させ、403 になる操作を押せないようにする。
     const canEdit = canEditContent(role);
-    const previewBlocks = useMemo(() => markdownPreview(bodyMarkdown), [bodyMarkdown]);
+    const previewSegments = useMemo(() => splitArticleContent(bodyMarkdown), [bodyMarkdown]);
     // 公開ボタンが押せない理由。location は「その項目が詳細設定の中にあるか」を表す。
     // 詳細設定は折りたたまれているため、中の項目が不足しているときは自動で開く必要がある。
     // slug のようにサーバーが保存時に採番する項目は判定に含めない（clientPublishRequirements）。
@@ -628,27 +628,7 @@ export function AdminEditorClient({ config, router }) {
                                                         setSlug(slugify(event.target.value));
                                                 }, readOnly: !canEdit, className: "mt-2 h-12 w-full rounded-lg border border-border bg-background px-3 text-[16px] outline-none focus:border-foreground", placeholder: "\u8A18\u4E8B\u30BF\u30A4\u30C8\u30EB" })] }), _jsxs("div", { className: "text-[13px] font-bold", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsx("span", { children: "\u672C\u6587" }), _jsx("button", { type: "button", onClick: () => switchEditorMode(editorMode === "rich" ? "markdown" : "rich"), 
                                                         // 閲覧専用でも、マークダウン原文を見たい人はいるので切り替えは残す
-                                                        className: "text-[12px] font-bold text-foreground/55 underline underline-offset-2", children: editorMode === "rich" ? "マークダウンで編集" : "通常の編集に戻す" })] }), editorMode === "rich" ? (_jsx(RichTextEditor, { ref: richEditorRef, markdown: bodyMarkdown, onChange: setBodyMarkdown, onRequestImage: () => bodyImageInputRef.current?.click(), editable: canEdit })) : (_jsx("textarea", { ref: textareaRef, value: bodyMarkdown, onChange: (event) => setBodyMarkdown(event.target.value), readOnly: !canEdit, className: "mt-2 min-h-[460px] w-full rounded-lg border border-border bg-background px-3 py-3 font-mono text-[15px] leading-7 outline-none focus:border-foreground", spellCheck: false }))] })] })) : (_jsxs("article", { className: "rounded-lg border border-border bg-background px-4 py-5 sm:px-6", children: [_jsx("p", { className: "text-[12px] font-bold text-foreground/55", children: categoryLabel || "カテゴリ未設定" }), _jsx("h1", { className: "mt-2 text-[26px] font-bold leading-tight", children: title || "記事タイトル" }), _jsx("p", { className: "mt-2 text-[13px] text-foreground/55", children: date }), heroImageKey ? (_jsx("img", { src: heroImageKey, alt: heroImageAlt || "", className: "mt-5 aspect-[16/9] w-full rounded-lg object-cover" })) : null, excerpt ? (_jsx("p", { className: "mt-5 text-[15px] font-bold leading-7", children: excerpt })) : null, _jsx("div", { className: "mt-7 grid gap-4 text-[15px] leading-8", children: previewBlocks.map((block, index) => {
-                                            if (block.kind === "h1") {
-                                                return (_jsx("h2", { className: "text-[24px] font-bold leading-tight", children: block.text }, `${block.kind}-${index}`));
-                                            }
-                                            if (block.kind === "h2") {
-                                                return (_jsx("h2", { className: "border-l-4 border-foreground pl-3 text-[22px] font-bold leading-tight", children: block.text }, `${block.kind}-${index}`));
-                                            }
-                                            if (block.kind === "h3") {
-                                                return (_jsx("h3", { className: "text-[18px] font-bold", children: block.text }, `${block.kind}-${index}`));
-                                            }
-                                            if (block.kind === "block") {
-                                                return (_jsx("p", { className: "rounded-md bg-muted px-3 py-2 text-[12px] font-bold tracking-wide text-foreground/60", children: block.text }, `${block.kind}-${index}`));
-                                            }
-                                            if (block.kind === "li") {
-                                                return _jsxs("p", { children: ["\u30FB", block.text] }, `${block.kind}-${index}`);
-                                            }
-                                            if (block.kind === "image" && block.src) {
-                                                return (_jsx("img", { src: block.src, alt: block.alt || "", className: "aspect-[16/9] w-full rounded-lg object-cover" }, `${block.kind}-${index}`));
-                                            }
-                                            return _jsx("p", { children: block.text }, `${block.kind}-${index}`);
-                                        }) })] }))] }), _jsxs("aside", { className: "grid gap-4 self-start lg:sticky lg:top-[76px]", children: [postTypes.length > 1 && (_jsxs("section", { className: "rounded-lg border border-border bg-background p-4", children: [_jsx("p", { className: "text-[12px] font-bold tracking-wide text-foreground/55", children: "\u3053\u306E\u8A18\u4E8B\u306E\u533A\u5206" }), _jsx("p", { className: "mt-1 text-[12px] leading-5 text-foreground/55", children: "\u9078\u3093\u3060\u533A\u5206\u306B\u3088\u3063\u3066\u3001\u516C\u958B\u5148\u306E\u30DA\u30FC\u30B8\u3068 URL \u304C\u5909\u308F\u308A\u307E\u3059\u3002" }), _jsx("div", { className: "mt-3 grid gap-2", children: postTypes.map((type) => (_jsxs("label", { className: `flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-[13px] ${postType === type.value
+                                                        className: "text-[12px] font-bold text-foreground/55 underline underline-offset-2", children: editorMode === "rich" ? "マークダウンで編集" : "通常の編集に戻す" })] }), editorMode === "rich" ? (_jsx(RichTextEditor, { ref: richEditorRef, markdown: bodyMarkdown, onChange: setBodyMarkdown, onRequestImage: () => bodyImageInputRef.current?.click(), editable: canEdit })) : (_jsx("textarea", { ref: textareaRef, value: bodyMarkdown, onChange: (event) => setBodyMarkdown(event.target.value), readOnly: !canEdit, className: "mt-2 min-h-[460px] w-full rounded-lg border border-border bg-background px-3 py-3 font-mono text-[15px] leading-7 outline-none focus:border-foreground", spellCheck: false }))] })] })) : (_jsxs("article", { className: "rounded-lg border border-border bg-background px-4 py-5 sm:px-6", children: [_jsx("p", { className: "text-[12px] font-bold text-foreground/55", children: categoryLabel || "カテゴリ未設定" }), _jsx("h1", { className: "mt-2 text-[26px] font-bold leading-tight", children: title || "記事タイトル" }), _jsx("p", { className: "mt-2 text-[13px] text-foreground/55", children: date }), heroImageKey ? (_jsx("img", { src: heroImageKey, alt: heroImageAlt || "", className: "mt-5 aspect-[16/9] w-full rounded-lg object-cover" })) : null, excerpt ? (_jsx("p", { className: "mt-5 text-[15px] font-bold leading-7", children: excerpt })) : null, _jsx("style", { children: PREVIEW_ARTICLE_CSS }), _jsx("div", { className: "admin-article-preview mt-7 text-[15px] leading-8", children: previewSegments.map((segment, index) => segment.kind === "block" ? (_jsx("div", { dangerouslySetInnerHTML: { __html: renderArticleBlock(segment) } }, `block-${index}`)) : (_jsx("div", { className: "admin-markdown-preview", dangerouslySetInnerHTML: { __html: markdownToHtml(segment.text) } }, `markdown-${index}`))) })] }))] }), _jsxs("aside", { className: "grid gap-4 self-start lg:sticky lg:top-[76px]", children: [postTypes.length > 1 && (_jsxs("section", { className: "rounded-lg border border-border bg-background p-4", children: [_jsx("p", { className: "text-[12px] font-bold tracking-wide text-foreground/55", children: "\u3053\u306E\u8A18\u4E8B\u306E\u533A\u5206" }), _jsx("p", { className: "mt-1 text-[12px] leading-5 text-foreground/55", children: "\u9078\u3093\u3060\u533A\u5206\u306B\u3088\u3063\u3066\u3001\u516C\u958B\u5148\u306E\u30DA\u30FC\u30B8\u3068 URL \u304C\u5909\u308F\u308A\u307E\u3059\u3002" }), _jsx("div", { className: "mt-3 grid gap-2", children: postTypes.map((type) => (_jsxs("label", { className: `flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-[13px] ${postType === type.value
                                                 ? "border-foreground bg-muted font-bold"
                                                 : "border-border"}`, children: [_jsx("input", { type: "radio", name: "post-type", value: type.value, checked: postType === type.value, onChange: () => setPostType(type.value), disabled: !canEdit }), _jsx("span", { children: type.label }), _jsx("span", { className: "ml-auto text-[11px] text-foreground/45", children: type.publicPathPrefix })] }, type.value))) })] })), _jsxs("section", { className: "rounded-lg border border-border bg-background p-4", children: [_jsxs("button", { type: "button", onClick: () => setShowAdvanced((value) => !value), className: "flex w-full items-center justify-between gap-2 text-left text-[14px] font-bold", "aria-expanded": showAdvanced, children: [_jsxs("span", { className: "flex items-center gap-2", children: ["\u8A73\u7D30\u8A2D\u5B9A\uFF08\u4EFB\u610F\uFF09", canEdit && hasMissingInAdvanced && (_jsx("span", { className: "rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700", children: "\u672A\u5165\u529B\u3042\u308A" }))] }), _jsx(ChevronDown, { size: 18, className: `transition-transform ${showAdvanced ? "rotate-180" : ""}` })] }), _jsx("p", { className: "mt-2 text-[12px] leading-5 text-foreground/55", children: "slug\u30FB\u30AB\u30C6\u30B4\u30EA\u30FB\u8981\u7D04\u30FB\u8457\u8005\u30FBSEO \u306A\u3069\u306F\u672A\u5165\u529B\u3067\u3082\u3001\u516C\u958B\u6642\u306B\u81EA\u52D5\u3067\u8A2D\u5B9A\u3055\u308C\u307E\u3059\u3002\u6307\u5B9A\u3057\u305F\u3044\u5834\u5408\u3060\u3051\u958B\u3044\u3066\u304F\u3060\u3055\u3044\u3002" })] }), showAdvanced ? (_jsxs("section", { className: "rounded-lg border border-border bg-background p-4", children: [_jsx("h2", { className: "text-[14px] font-bold", children: "\u516C\u958B\u8A2D\u5B9A" }), _jsxs("div", { className: "mt-4 grid gap-4", children: [_jsxs("label", { className: "block text-[12px] font-bold", children: ["slug", _jsx("input", { value: slug, onChange: (event) => setSlug(event.target.value), disabled: Boolean(postId) || !canEdit, className: "mt-2 h-11 w-full rounded-md border border-border bg-background px-3 text-[15px] disabled:bg-muted disabled:text-foreground/55" })] }), _jsxs("label", { className: "block text-[12px] font-bold", children: ["\u516C\u958B\u65E5", _jsx("input", { value: date, onChange: (event) => setDate(event.target.value), type: "date", disabled: !canEdit, className: "mt-2 h-11 w-full rounded-md border border-border bg-background px-3 text-[15px]" })] }), _jsxs("label", { className: "block text-[12px] font-bold", children: ["\u30AB\u30C6\u30B4\u30EA", _jsxs("select", { value: categorySlug, onChange: (event) => {
                                                             const next = categories.find((category) => category.slug === event.target.value);

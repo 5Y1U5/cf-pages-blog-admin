@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import type { AdminRole, BlogAdminConfig } from "../config/index.js";
+import { renderArticleBlock, splitArticleContent } from "../content/article-blocks.js";
 import {
   canEditContent,
   clientPublishRequirements,
@@ -31,6 +32,7 @@ import {
   prepareImageForUpload,
   translateUploadError,
 } from "./lib/admin-image.js";
+import { markdownToHtml } from "./lib/admin-markdown.js";
 import {
   ADMIN_API,
   ADMIN_PATHS,
@@ -160,46 +162,45 @@ function stringifyFaq(value: string): string {
   }
 }
 
-/** ブロック記法をプレビューでどう呼ぶか。実際の見た目は公開ページ側の CSS で決まる。 */
-const BLOCK_LABELS: Record<string, string> = {
-  callout: "要点ボックス",
-  points: "ポイントカード",
-  compare: "比較カード",
-  stat: "数字ハイライト",
-  faq: "よくある質問",
-};
-
-function markdownPreview(
-  markdown: string
-): { kind: string; text: string; src?: string; alt?: string }[] {
-  return markdown
-    .split("\n")
-    .map((raw) => raw.trim())
-    .filter(Boolean)
-    .map((line) => {
-      // ブロック記法は編集画面では簡易表示にとどめる（公開ページでカードとして出る）。
-      const blockOpen = line.match(/^:::([a-z]+)[ 　]*(.*)$/);
-      if (blockOpen) {
-        const label = BLOCK_LABELS[blockOpen[1] || ""];
-        if (label) {
-          const arg = (blockOpen[2] || "").trim();
-          return { kind: "block", text: arg ? `${label}：${arg}` : label };
-        }
-      }
-      if (/^:::[ 　]*$/.test(line)) return { kind: "skip", text: "" };
-
-      const image = line.match(/^!\[(.*)]\((.*)\)$/);
-      if (image) {
-        return { kind: "image", text: "", alt: image[1] || "", src: image[2] || "" };
-      }
-      if (line.startsWith("### ")) return { kind: "h3", text: line.replace(/^### /, "") };
-      if (line.startsWith("## ")) return { kind: "h2", text: line.replace(/^## /, "") };
-      if (line.startsWith("# ")) return { kind: "h1", text: line.replace(/^# /, "") };
-      if (line.startsWith("- ")) return { kind: "li", text: line.replace(/^- /, "") };
-      return { kind: "p", text: line };
-    })
-    .filter((block) => block.kind !== "skip");
-}
+const PREVIEW_ARTICLE_CSS = `
+.admin-article-preview .admin-markdown-preview > *:first-child { margin-top: 0; }
+.admin-article-preview .admin-markdown-preview > *:last-child { margin-bottom: 0; }
+.admin-article-preview h1 { margin: 0 0 18px; font-size: 24px; line-height: 1.35; font-weight: 800; }
+.admin-article-preview h2 { margin: 30px 0 14px; padding-left: 12px; border-left: 4px solid #0f172a; font-size: 22px; line-height: 1.45; font-weight: 800; }
+.admin-article-preview h3 { margin: 24px 0 10px; font-size: 18px; line-height: 1.55; font-weight: 800; }
+.admin-article-preview p { margin: 0 0 16px; line-height: 2; }
+.admin-article-preview ul, .admin-article-preview ol { margin: 0 0 18px; padding-left: 1.5em; line-height: 1.9; }
+.admin-article-preview li + li { margin-top: 6px; }
+.admin-article-preview img { width: 100%; border-radius: 12px; object-fit: cover; }
+.admin-article-preview table { width: 100%; margin: 20px 0 24px; border-collapse: collapse; font-size: 14px; }
+.admin-article-preview th, .admin-article-preview td { padding: 12px 14px; text-align: left; border: 1px solid #dde3ec; vertical-align: top; }
+.admin-article-preview th { background: #f2f6fb; color: #082f60; font-weight: 800; }
+.admin-article-preview blockquote { margin: 22px 0; padding: 16px 18px; border-left: 4px solid #38bdf8; border-radius: 10px; background: #f4f8fb; color: #334155; }
+.admin-article-preview .blog-callout { display: flex; align-items: flex-start; gap: 14px; margin: 26px 0; padding: 18px 20px; background: #f4f8fb; border-left: 4px solid #38bdf8; border-radius: 12px; }
+.admin-article-preview .blog-callout-icon { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; background: rgba(56, 189, 248, .16); color: #075985; }
+.admin-article-preview .blog-callout-icon svg { width: 18px; height: 18px; }
+.admin-article-preview .blog-callout-text { flex: 1; font-size: 14px; line-height: 1.9; }
+.admin-article-preview .blog-callout-text strong { display: block; margin-bottom: 4px; color: #0f172a; }
+.admin-article-preview .blog-points, .admin-article-preview .blog-compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 26px 0; }
+.admin-article-preview .blog-point { padding: 16px 18px; border: 1px solid #dfe6ee; border-radius: 12px; background: #fff; }
+.admin-article-preview .blog-point-label { display: block; margin-bottom: 6px; color: #0369a1; font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+.admin-article-preview .blog-point-text { margin: 0; font-size: 14px; line-height: 1.8; }
+.admin-article-preview .blog-compare-card { padding: 16px 18px; border-radius: 12px; background: #f5f6f8; }
+.admin-article-preview .blog-compare-card.is-after { background: rgba(56, 189, 248, .1); border: 1px solid rgba(56, 189, 248, .35); }
+.admin-article-preview .blog-compare-label { margin-bottom: 6px; font-size: 11px; font-weight: 800; letter-spacing: .12em; color: #64748b; }
+.admin-article-preview .blog-compare-card.is-after .blog-compare-label { color: #0369a1; }
+.admin-article-preview .blog-compare-text { font-size: 14px; line-height: 1.8; }
+.admin-article-preview .blog-stat { margin: 26px 0; padding: 26px 16px; border-radius: 16px; background: #f4f8fb; text-align: center; }
+.admin-article-preview .blog-stat-number { display: block; margin-bottom: 6px; color: #0f172a; font-size: 38px; font-weight: 800; line-height: 1.1; }
+.admin-article-preview .blog-stat-text { font-size: 13px; color: #64748b; }
+.admin-article-preview .blog-faq { margin-top: 38px; padding-top: 28px; border-top: 1px solid #dfe6ee; }
+.admin-article-preview .blog-faq h2 { margin: 0 0 18px; }
+.admin-article-preview .blog-faq details { margin-bottom: 12px; padding: 16px 20px; border: 1px solid #dfe6ee; border-radius: 12px; }
+.admin-article-preview .blog-faq details[open] { border-color: #38bdf8; }
+.admin-article-preview .blog-faq summary { cursor: pointer; font-size: 14px; font-weight: 800; }
+.admin-article-preview .blog-faq details div { margin-top: 10px; font-size: 14px; line-height: 1.9; color: #475569; }
+@media (max-width: 640px) { .admin-article-preview .blog-points, .admin-article-preview .blog-compare { grid-template-columns: 1fr; } }
+`;
 
 function statusLabel(status: string): string {
   const labels: Record<string, string> = {
@@ -323,7 +324,7 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
   // 編集・公開できるのは admin / client_publisher のみ（client_viewer は閲覧専用）。
   // サーバー側 RBAC と一致させ、403 になる操作を押せないようにする。
   const canEdit = canEditContent(role);
-  const previewBlocks = useMemo(() => markdownPreview(bodyMarkdown), [bodyMarkdown]);
+  const previewSegments = useMemo(() => splitArticleContent(bodyMarkdown), [bodyMarkdown]);
 
   // 公開ボタンが押せない理由。location は「その項目が詳細設定の中にあるか」を表す。
   // 詳細設定は折りたたまれているため、中の項目が不足しているときは自動で開く必要がある。
@@ -944,60 +945,22 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
               {excerpt ? (
                 <p className="mt-5 text-[15px] font-bold leading-7">{excerpt}</p>
               ) : null}
-              <div className="mt-7 grid gap-4 text-[15px] leading-8">
-                {previewBlocks.map((block, index) => {
-                  if (block.kind === "h1") {
-                    return (
-                      <h2
-                        key={`${block.kind}-${index}`}
-                        className="text-[24px] font-bold leading-tight"
-                      >
-                        {block.text}
-                      </h2>
-                    );
-                  }
-                  if (block.kind === "h2") {
-                    return (
-                      <h2
-                        key={`${block.kind}-${index}`}
-                        className="border-l-4 border-foreground pl-3 text-[22px] font-bold leading-tight"
-                      >
-                        {block.text}
-                      </h2>
-                    );
-                  }
-                  if (block.kind === "h3") {
-                    return (
-                      <h3 key={`${block.kind}-${index}`} className="text-[18px] font-bold">
-                        {block.text}
-                      </h3>
-                    );
-                  }
-                  if (block.kind === "block") {
-                    return (
-                      <p
-                        key={`${block.kind}-${index}`}
-                        className="rounded-md bg-muted px-3 py-2 text-[12px] font-bold tracking-wide text-foreground/60"
-                      >
-                        {block.text}
-                      </p>
-                    );
-                  }
-                  if (block.kind === "li") {
-                    return <p key={`${block.kind}-${index}`}>・{block.text}</p>;
-                  }
-                  if (block.kind === "image" && block.src) {
-                    return (
-                      <img
-                        key={`${block.kind}-${index}`}
-                        src={block.src}
-                        alt={block.alt || ""}
-                        className="aspect-[16/9] w-full rounded-lg object-cover"
-                      />
-                    );
-                  }
-                  return <p key={`${block.kind}-${index}`}>{block.text}</p>;
-                })}
+              <style>{PREVIEW_ARTICLE_CSS}</style>
+              <div className="admin-article-preview mt-7 text-[15px] leading-8">
+                {previewSegments.map((segment, index) =>
+                  segment.kind === "block" ? (
+                    <div
+                      key={`block-${index}`}
+                      dangerouslySetInnerHTML={{ __html: renderArticleBlock(segment) }}
+                    />
+                  ) : (
+                    <div
+                      key={`markdown-${index}`}
+                      className="admin-markdown-preview"
+                      dangerouslySetInnerHTML={{ __html: markdownToHtml(segment.text) }}
+                    />
+                  )
+                )}
               </div>
             </article>
           )}

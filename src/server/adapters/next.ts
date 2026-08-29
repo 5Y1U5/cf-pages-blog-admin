@@ -23,6 +23,7 @@ export interface PagesStyleHandlers {
   onRequestGet?: PagesStyleHandler;
   onRequestPost?: PagesStyleHandler;
   onRequestPut?: PagesStyleHandler;
+  onRequestPatch?: PagesStyleHandler;
   onRequestDelete?: PagesStyleHandler;
 }
 
@@ -40,6 +41,7 @@ export interface NextRouteHandlers {
   GET?: RouteHandler;
   POST?: RouteHandler;
   PUT?: RouteHandler;
+  PATCH?: RouteHandler;
   DELETE?: RouteHandler;
 }
 
@@ -47,6 +49,7 @@ const METHOD_MAP = [
   ["onRequestGet", "GET"],
   ["onRequestPost", "POST"],
   ["onRequestPut", "PUT"],
+  ["onRequestPatch", "PATCH"],
   ["onRequestDelete", "DELETE"],
 ] as const;
 

@@ -7,6 +7,7 @@ export declare const ADMIN_PATHS: {
     readonly login: "/admin/login";
     readonly posts: "/admin/posts";
     readonly users: "/admin/users";
+    readonly categories: "/admin/categories";
     readonly editor: "/admin/editor";
 };
 export declare const ADMIN_API: {

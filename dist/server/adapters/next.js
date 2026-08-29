@@ -2,6 +2,7 @@ const METHOD_MAP = [
     ["onRequestGet", "GET"],
     ["onRequestPost", "POST"],
     ["onRequestPut", "PUT"],
+    ["onRequestPatch", "PATCH"],
     ["onRequestDelete", "DELETE"],
 ];
 /**

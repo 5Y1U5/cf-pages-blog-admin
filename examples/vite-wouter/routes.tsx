@@ -1,6 +1,7 @@
 // 既存の <Switch> / <Route> の中に足す
 import { Route } from "wouter";
 import {
+  AdminCategoriesClient,
   AdminEditorClient,
   AdminLoginClient,
   AdminPostsClient,
@@ -22,6 +23,9 @@ export function AdminRoutes() {
       </Route>
       <Route path="/admin/users">
         {() => <AdminUsersClient config={blogAdminConfig} router={adminRouter} />}
+      </Route>
+      <Route path="/admin/categories">
+        {() => <AdminCategoriesClient config={blogAdminConfig} router={adminRouter} />}
       </Route>
     </>
   );

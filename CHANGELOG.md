@@ -2,6 +2,34 @@
 
 semver に従う。major に倒す条件は README の「バージョニング」を参照。
 
+## 2.1.0
+
+カテゴリを管理画面から追加・改名できるようにした。これまで D1 のカテゴリを足したり名前を
+変えたりする手段が無く、リポジトリの `blog-categories.json` を直接編集しても、次に記事を
+公開した時点で D1 の内容に上書きされて元に戻っていた。
+
+**migration は増えていない。導入先では次の3つが要る**（Renovate の更新 PR では配れない）。
+
+1. `npx cf-pages-blog-admin sync-routes` を流して
+   `functions/api/admin/categories/[id].ts` に `onRequestPatch` を足す。
+   忘れると画面から名前を変えたときだけ 405 になる
+2. `/admin/categories` のページを1枚足す（Next.js は `src/app/admin/categories/page.tsx`、
+   Vite + wouter はルーター定義に 1 行。`examples/` に実例がある）
+3. `package.json` のこのパッケージのバージョンを上げる
+
+- `PATCH /api/admin/categories/<id>` を追加。`label` と `description` を変更できる。
+  権限は追加（POST）と同じ `admin` / `client_publisher`
+- **`slug` と `code` は変更できない。** 記事は `category_slug` で紐づき、書き出した Markdown の
+  frontmatter も `code` を持つため、変えると既存記事との対応が切れる。送ると 400 で断る
+- 表示名を変えると、そのカテゴリの記事（`post_drafts.category_label`）も同じ名前へ追随する。
+  すでに公開した Markdown の `categoryLabel` は書き換わらず、その記事を次に公開したときに変わる
+- 変更のたびに `content.categoriesJsonPath` の JSON を GitHub へ書き戻す。
+  書き出しに失敗したら D1 の変更も元へ戻す（ずれたまま残すと次の公開で古い名前へ戻るため）
+- `ui` に `AdminCategoriesClient` を追加。記事一覧のヘッダー（管理者のみ）から開ける。
+  一覧・追加・名前の変更・削除ができる。並べ替えは無い
+- 操作ログに `category.update` を追加
+- `toRouteHandlers`（Route Handler アダプタ）が PATCH に対応した
+
 ## 2.0.0
 
 セキュリティ面の積み残しを埋めた。**migration が2本増えるので、

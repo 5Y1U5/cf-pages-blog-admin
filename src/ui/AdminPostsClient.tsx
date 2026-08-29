@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { FileText, KeyRound, Plus, RefreshCw, Trash2, UsersRound } from "lucide-react";
+import { FileText, KeyRound, Plus, RefreshCw, Tags, Trash2, UsersRound } from "lucide-react";
 
 import type { AdminRole, BlogAdminConfig } from "../config/index.js";
 import { canEditContent, publicPostUrl } from "../config/index.js";
@@ -228,6 +228,13 @@ export function AdminPostsClient({ config, router, headerActions }: AdminPostsCl
             {isAdmin ? (
               <>
                 {headerActions}
+                <Link
+                  href={ADMIN_PATHS.categories}
+                  className="flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background"
+                >
+                  <Tags size={18} />
+                  <span className="sr-only">カテゴリ管理</span>
+                </Link>
                 <Link
                   href={ADMIN_PATHS.users}
                   className="flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background"

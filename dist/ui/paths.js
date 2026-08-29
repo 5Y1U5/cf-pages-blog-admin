@@ -7,6 +7,7 @@ export const ADMIN_PATHS = {
     login: "/admin/login",
     posts: "/admin/posts",
     users: "/admin/users",
+    categories: "/admin/categories",
     editor: "/admin/editor",
 };
 export const ADMIN_API = {

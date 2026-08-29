@@ -4,6 +4,7 @@ export { AdminLogoutButton } from "./AdminLogoutButton.js";
 export { AdminPostsClient } from "./AdminPostsClient.js";
 export { AdminEditorClient } from "./AdminEditorClient.js";
 export { AdminUsersClient } from "./AdminUsersClient.js";
+export { AdminCategoriesClient, } from "./AdminCategoriesClient.js";
 export { AdminPasswordPanel, } from "./AdminPasswordPanel.js";
 export { RichTextEditor, } from "./RichTextEditor.js";
 export { cn } from "./cn.js";

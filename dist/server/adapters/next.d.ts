@@ -21,6 +21,7 @@ export interface PagesStyleHandlers {
     onRequestGet?: PagesStyleHandler;
     onRequestPost?: PagesStyleHandler;
     onRequestPut?: PagesStyleHandler;
+    onRequestPatch?: PagesStyleHandler;
     onRequestDelete?: PagesStyleHandler;
 }
 /**
@@ -35,6 +36,7 @@ export interface NextRouteHandlers {
     GET?: RouteHandler;
     POST?: RouteHandler;
     PUT?: RouteHandler;
+    PATCH?: RouteHandler;
     DELETE?: RouteHandler;
 }
 /**

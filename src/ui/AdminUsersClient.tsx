@@ -67,6 +67,7 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   "user.delete": "ユーザーを削除",
   "user.password_reset": "パスワードを再発行",
   "category.create": "カテゴリを追加",
+  "category.update": "カテゴリ名を変更",
   "category.delete": "カテゴリを削除",
   "asset.upload": "画像をアップロード",
 };

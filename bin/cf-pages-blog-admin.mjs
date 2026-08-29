@@ -184,7 +184,7 @@ const ROUTES = [
     path: "functions/api/admin/categories/[id].ts",
     module: "server/handlers/categories/detail",
     factory: "createCategoryDetailHandlers",
-    exports: ["onRequestDelete"],
+    exports: ["onRequestPatch", "onRequestDelete"],
   },
   {
     path: "functions/api/admin/users/index.ts",
@@ -395,6 +395,11 @@ const NEXT_PAGES = [
   { path: "src/app/admin/login/page.tsx", component: "AdminLoginClient", suspense: false },
   { path: "src/app/admin/posts/page.tsx", component: "AdminPostsClient", suspense: false },
   { path: "src/app/admin/users/page.tsx", component: "AdminUsersClient", suspense: false },
+  {
+    path: "src/app/admin/categories/page.tsx",
+    component: "AdminCategoriesClient",
+    suspense: false,
+  },
   { path: "src/app/admin/editor/page.tsx", component: "AdminEditorClient", suspense: true },
 ];
 
@@ -565,7 +570,7 @@ async function init(args) {
 4. npm run db:migrate でスキーマを流し、管理ユーザーを1人作る
 
 5. Cloudflare Pages のシークレットに GITHUB_TOKEN を登録する
-${answers.framework === "vite" ? "\n6. ルーター定義に /admin/login /admin/posts /admin/editor /admin/users を足す（examples/vite-wouter を参照）\n" : ""}`);
+${answers.framework === "vite" ? "\n6. ルーター定義に /admin/login /admin/posts /admin/editor /admin/users /admin/categories を足す（examples/vite-wouter を参照）\n" : ""}`);
 }
 
 // --- entry ------------------------------------------------------------------

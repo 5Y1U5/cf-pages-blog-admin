@@ -25,6 +25,7 @@ export type AuditAction =
   | "user.delete"
   | "user.password_reset"
   | "category.create"
+  | "category.update"
   | "category.delete"
   | "asset.upload";
 

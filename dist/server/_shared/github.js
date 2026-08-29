@@ -132,7 +132,9 @@ export async function commitGitHubFiles(env, config, files, message) {
         return cfg;
     if (files.length === 0)
         return { ok: true, commitSha: null, tokenWarning: null };
-    const ref = `heads/${cfg.branch}`;
+    // ブランチ名は URL に埋める前にエスケープする。ただし `feature/x` のような
+    // 階層はパスの区切りとして残す必要があるので、`/` だけ戻す（contentsUrl と同じ扱い）。
+    const ref = `heads/${encodeURIComponent(cfg.branch).replaceAll("%2F", "/")}`;
     const head = await githubFetch(cfg, gitUrl(cfg, `ref/${ref}`));
     if (!head.ok)
         return serverError(githubFailureMessage("read", head.status, cfg));

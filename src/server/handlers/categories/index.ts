@@ -13,6 +13,8 @@ import {
   serverError,
 } from "../../_shared/admin.js";
 import { recordAudit } from "../../_shared/audit.js";
+import { upsertGitHubFile } from "../../_shared/github.js";
+import { CATEGORY_SELECT, categoryRowsToJson, type CategoryRow } from "../../_shared/posts.js";
 
 interface CategoryPayload {
   slug?: string;
@@ -73,6 +75,14 @@ export function createCategoriesHandlers(config: BlogAdminConfig) {
       );
     }
 
+    // 書き出しに失敗したときに戻せるよう、上書き前の状態を控えておく。
+    // 同じスラッグを送ると既存行の更新になる（削除済みの復活も含む）ため、
+    // 「新規に入れた」のか「既にあった」のかで戻し方が変わる。
+    const previous = await db
+      .prepare("SELECT * FROM categories WHERE client_id = ? AND slug = ? LIMIT 1")
+      .bind(user.client_id, slug)
+      .first<CategoryRow>();
+
     const now = nowIso();
     const id = randomId("cat");
     // ON CONFLICT で既存行を更新したときに DB に残るのは既存行の id で、いま採番した id ではない。
@@ -100,6 +110,45 @@ export function createCategoriesHandlers(config: BlogAdminConfig) {
       }>();
 
     if (!row) return serverError("カテゴリを保存できませんでした。");
+
+    // 公開側がカテゴリ一覧として読むのは書き出した JSON なので、ここで反映しておく。
+    // 記事を公開するまで書かれないままだと、追加したカテゴリが画面にはあるのに
+    // サイトには無い状態が続く。
+    const categories = await db
+      .prepare(CATEGORY_SELECT)
+      .bind(user.client_id)
+      .all<CategoryRow>();
+    const commit = await upsertGitHubFile(
+      ctx.env,
+      config,
+      config.content.categoriesJsonPath,
+      categoryRowsToJson(categories.results || []),
+      `chore: add blog category ${slug} from admin`
+    );
+    if (commit instanceof Response) {
+      if (previous) {
+        await db
+          .prepare(
+            `UPDATE categories SET label = ?, description = ?, is_active = ?, updated_at = ?
+             WHERE id = ? AND client_id = ?`
+          )
+          .bind(
+            previous.label,
+            previous.description,
+            previous.is_active,
+            nowIso(),
+            row.id,
+            user.client_id
+          )
+          .run();
+      } else {
+        await db
+          .prepare("DELETE FROM categories WHERE id = ? AND client_id = ?")
+          .bind(row.id, user.client_id)
+          .run();
+      }
+      return commit;
+    }
 
     await recordAudit(db, ctx.request, user, {
       action: "category.create",

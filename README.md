@@ -262,7 +262,7 @@ content: {
 ### カテゴリの管理
 
 `/admin/categories` から追加・改名・削除ができる。カテゴリの正本は D1 で、
-変更のたびに `content.categoriesJsonPath` の JSON を GitHub へ書き戻す。
+追加・変更・削除のたびに `content.categoriesJsonPath` の JSON を GitHub へ書き戻す。
 リポジトリの JSON を直接編集しても、次に誰かが記事を公開した時点で D1 の内容へ戻る。
 
 | 操作 | API | 権限 |

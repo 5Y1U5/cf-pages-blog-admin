@@ -83,6 +83,39 @@ describe("カテゴリの管理", () => {
     assert.equal(listed.label, "住まいのコラム");
   });
 
+  it("追加した時点で JSON にも書き出す", async () => {
+    const site = await createSite();
+    const admin = await site.seedAdmin();
+
+    // 記事を公開するまで書かれないままだと、追加したカテゴリが画面にはあるのに
+    // サイトには無い状態が続く。
+    await addCategory(site, admin.session, "column", "ブログ");
+    assert.deepEqual(JSON.parse(site.github.files.get(CATEGORIES_JSON)), [
+      { code: "column", slug: "column", label: "ブログ" },
+    ]);
+
+    await addCategory(site, admin.session, "news", "お知らせ");
+    assert.deepEqual(
+      JSON.parse(site.github.files.get(CATEGORIES_JSON)).map((row) => row.slug),
+      ["column", "news"]
+    );
+  });
+
+  it("追加時の書き出しに失敗したら、そのカテゴリは残らない", async () => {
+    const site = await createSite();
+    const admin = await site.seedAdmin();
+
+    site.github.failWrites = true;
+    const failed = await site.call(site.handlers.categoriesCreate, {
+      session: admin.session,
+      body: { slug: "column", label: "ブログ" },
+    });
+    assert.equal(failed.status, 500);
+
+    const list = await site.call(site.handlers.categoriesList, { session: admin.session });
+    assert.deepEqual(list.json.categories, []);
+  });
+
   it("改名すると、書き出す JSON も新しい名前になる", async () => {
     const site = await createSite();
     const admin = await site.seedAdmin();
@@ -128,8 +161,10 @@ describe("カテゴリの管理", () => {
       list.json.categories.map((row) => [row.slug, row.label]),
       [["column", "ブログ"]]
     );
-    // 変更していないので JSON も書き出していない。
-    assert.equal(site.github.files.has(CATEGORIES_JSON), false);
+    // 変更していないので、書き出した JSON も追加した時のままになっている。
+    assert.deepEqual(JSON.parse(site.github.files.get(CATEGORIES_JSON)), [
+      { code: "column", slug: "column", label: "ブログ" },
+    ]);
 
     // 同じスラッグを添えて送るぶんには通る（画面が現在値を送り返しても弾かれない）。
     const same = await site.call(site.handlers.categoryPatch, {

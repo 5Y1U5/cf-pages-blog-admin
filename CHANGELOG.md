@@ -23,7 +23,9 @@ semver に従う。major に倒す条件は README の「バージョニング�
   frontmatter も `code` を持つため、変えると既存記事との対応が切れる。送ると 400 で断る
 - 表示名を変えると、そのカテゴリの記事（`post_drafts.category_label`）も同じ名前へ追随する。
   すでに公開した Markdown の `categoryLabel` は書き換わらず、その記事を次に公開したときに変わる
-- 変更のたびに `content.categoriesJsonPath` の JSON を GitHub へ書き戻す。
+- 追加・変更・削除のたびに `content.categoriesJsonPath` の JSON を GitHub へ書き戻す。
+  **追加も書き戻すようになった**（従来は記事を公開するまで書かれず、追加したカテゴリが
+  画面にはあるのにサイトには無い状態が続いた）。
   書き出しに失敗したら D1 の変更も元へ戻す（ずれたまま残すと次の公開で古い名前へ戻るため）
 - `ui` に `AdminCategoriesClient` を追加。記事一覧のヘッダー（管理者のみ）から開ける。
   一覧・追加・名前の変更・削除ができる。並べ替えは無い

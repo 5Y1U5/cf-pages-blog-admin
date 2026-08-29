@@ -21,10 +21,9 @@ interface AdminCategoryItem {
 const LOAD_ERROR_MESSAGE =
   "カテゴリ一覧を取得できませんでした。時間をおいて再度お試しください。";
 const VIEWER_NOTICE = "閲覧専用の権限でログインしています。カテゴリの追加・変更はできません。";
-// 表示名を変えても、すでに公開した Markdown の frontmatter は書き換わらない。
-// 記事一覧とカテゴリ一覧はその場で新しい名前になるので、差が出るのは記事ページだけ。
-const RENAME_NOTICE =
-  "公開済み記事のファイルに書かれた名前は、その記事を次に公開したときに新しい名前へ変わります。";
+// 公開済み記事のファイルも同時に書き換わる。サイトへ反映されるのは
+// そのコミットでビルドが走ったあとなので、その時間差だけ伝えておく。
+const RENAME_NOTICE = "サイトの表示は、この変更のビルドが終わってから切り替わります。";
 
 export interface AdminCategoriesClientProps {
   config: BlogAdminConfig;
@@ -168,6 +167,7 @@ export function AdminCategoriesClient({ router }: AdminCategoriesClientProps) {
     const data = (await res.json().catch(() => ({}))) as {
       category?: AdminCategoryItem;
       updatedPosts?: number;
+      republishedPosts?: number;
       message?: string;
     };
     setBusyId("");
@@ -186,9 +186,10 @@ export function AdminCategoriesClient({ router }: AdminCategoriesClientProps) {
     );
     cancelEditing();
     const followed = data.updatedPosts || 0;
+    const republished = data.republishedPosts || 0;
     setMessage(
       followed > 0
-        ? `名前を変更しました。このカテゴリの記事 ${followed} 件にも反映しています。${RENAME_NOTICE}`
+        ? `名前を変更しました。このカテゴリの記事 ${followed} 件（うち公開中 ${republished} 件）にも反映しています。${RENAME_NOTICE}`
         : "名前を変更しました。"
     );
   }

@@ -1,7 +1,8 @@
+import { postFilePath } from "../../../config/index.js";
 import { badRequest, json, normalizeString, nowIso, readJson, requireDb, requireUser, } from "../../_shared/admin.js";
 import { recordAudit } from "../../_shared/audit.js";
-import { upsertGitHubFile } from "../../_shared/github.js";
-import { CATEGORY_SELECT, categoryRowsToJson } from "../../_shared/posts.js";
+import { commitGitHubFiles, upsertGitHubFile } from "../../_shared/github.js";
+import { CATEGORY_SELECT, categoryRowsToJson, draftToMarkdown, } from "../../_shared/posts.js";
 function idParam(value) {
     if (Array.isArray(value))
         return value[0] || "";
@@ -18,11 +19,40 @@ export function createCategoryDetailHandlers(config) {
             return json({ ok: false, error: "not_found" }, { status: 404 });
         return category;
     }
+    /** いま有効なカテゴリ一覧を、書き出し先の JSON の中身にする。 */
+    async function categoriesJson(db, clientId) {
+        const rows = await db.prepare(CATEGORY_SELECT).bind(clientId).all();
+        return categoryRowsToJson(rows.results || []);
+    }
     /** 有効なカテゴリ一覧を書き出し先の JSON へ反映する。 */
     async function commitCategoriesJson(ctx, db, clientId, message) {
-        const rows = await db.prepare(CATEGORY_SELECT).bind(clientId).all();
-        const commit = await upsertGitHubFile(ctx.env, config, config.content.categoriesJsonPath, categoryRowsToJson(rows.results || []), message);
+        const commit = await upsertGitHubFile(ctx.env, config, config.content.categoriesJsonPath, await categoriesJson(db, clientId), message);
         return commit instanceof Response ? commit : null;
+    }
+    /**
+     * 公開済み記事の Markdown を組み立て直す。
+     *
+     * 公開時に frontmatter へ表示名を焼き込んでいる（`categoryLabel`）ため、
+     * カテゴリ表だけ直しても、公開済みの記事ページは古い名前のままになる。
+     * 導入側のサイトは frontmatter を優先して読むので、ここを直さないと
+     * 一覧と記事ページで名前が食い違う。
+     *
+     * 組み立ては公開処理と同じ `draftToMarkdown` を通す（二重管理にしないため）。
+     * 対象は `status = 'published'` のものだけ。下書きと取り下げ済みには
+     * そもそもファイルが無い（取り下げ時に消している）。
+     */
+    async function publishedMarkdownFiles(db, clientId, categorySlug) {
+        const { results } = await db
+            .prepare(`SELECT * FROM post_drafts
+         WHERE client_id = ? AND category_slug = ? AND status = 'published'
+         ORDER BY created_at ASC`)
+            .bind(clientId, categorySlug)
+            .all();
+        const categories = await db.prepare(CATEGORY_SELECT).bind(clientId).all();
+        return (results || []).map((post) => ({
+            path: post.source_path || postFilePath(config, post.slug),
+            content: draftToMarkdown(post, config, categories.results || []),
+        }));
     }
     /**
      * 表示名・説明の変更。
@@ -79,6 +109,7 @@ export function createCategoryDetailHandlers(config) {
                     description: category.description,
                 },
                 updatedPosts: 0,
+                republishedPosts: 0,
             });
         }
         const now = nowIso();
@@ -97,8 +128,23 @@ export function createCategoryDetailHandlers(config) {
                 .run();
             updatedPosts = result.meta?.changes ?? 0;
         }
-        const failed = await commitCategoriesJson(ctx, db, user.client_id, `chore: rename blog category ${category.slug} from admin`);
-        if (failed) {
+        // カテゴリ一覧の JSON と、公開済み記事の Markdown をまとめて1コミットで書き換える。
+        // 記事を1本ずつコミットすると、途中で失敗したときに「3本だけ新しい名前」という
+        // 中途半端な状態が残り、戻す作業もまた失敗しうる。1コミットなら結果は
+        // 「全部書けた」か「1つも書けていない」のどちらかにしかならない。
+        const files = [
+            {
+                path: config.content.categoriesJsonPath,
+                content: await categoriesJson(db, user.client_id),
+            },
+        ];
+        // 表示名が変わっていない（説明だけ直した）ときは記事のファイルは変わらない。
+        if (labelChanged) {
+            files.push(...(await publishedMarkdownFiles(db, user.client_id, category.slug)));
+        }
+        const republishedPosts = files.length - 1;
+        const commit = await commitGitHubFiles(ctx.env, config, files, `chore: rename blog category ${category.slug} from admin`);
+        if (commit instanceof Response) {
             // 書き出しに失敗したら D1 も元へ戻す。JSON と D1 がずれたまま残ると、
             // 次に誰かが記事を公開した時点で古い名前へ黙って戻る。
             await db
@@ -111,7 +157,7 @@ export function createCategoryDetailHandlers(config) {
                     .bind(category.label, user.client_id, category.slug)
                     .run();
             }
-            return failed;
+            return commit;
         }
         await recordAudit(db, ctx.request, user, {
             action: "category.update",
@@ -129,6 +175,7 @@ export function createCategoryDetailHandlers(config) {
                 description,
             },
             updatedPosts,
+            republishedPosts,
         });
     };
     const onRequestDelete = async (ctx) => {

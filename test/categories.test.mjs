@@ -30,6 +30,26 @@ async function addPost(site, session, { title, categorySlug, categoryLabel }) {
   return created.json.post.id;
 }
 
+/** 記事を1本公開して、書き出された .md のパスを返す。 */
+async function publishPost(site, session, id) {
+  const published = await site.call(site.handlers.postPublish, {
+    session,
+    method: "POST",
+    params: { id },
+    body: {},
+  });
+  assert.equal(published.status, 200, JSON.stringify(published.json));
+  return published.json;
+}
+
+/** 書き出された Markdown の frontmatter から categoryLabel を取り出す。 */
+function labelInMarkdown(site, path) {
+  const markdown = site.github.files.get(path);
+  assert.ok(markdown, `${path} が書き出されていません`);
+  const match = markdown.match(/^categoryLabel: (.*)$/m);
+  return match ? JSON.parse(match[1]) : null;
+}
+
 /** 記事が持っているカテゴリの表示名を読む。 */
 async function labelOfPost(site, id) {
   const row = await site.db
@@ -238,6 +258,118 @@ describe("カテゴリの管理", () => {
     const list = await site.call(site.handlers.categoriesList, { session: admin.session });
     assert.equal(list.json.categories[0].label, "ブログ");
     assert.equal((await labelOfPost(site, post)).category_label, "ブログ");
+  });
+
+  it("改名すると、公開済み記事の Markdown も新しい名前になる", async () => {
+    const site = await createSite();
+    const admin = await site.seedAdmin();
+    const column = await addCategory(site, admin.session, "column", "ブログ");
+
+    const publishedId = await addPost(site, admin.session, {
+      title: "Kitchen renovation",
+      categorySlug: "column",
+      categoryLabel: "ブログ",
+    });
+    await publishPost(site, admin.session, publishedId);
+    const publishedPath = "content/posts/kitchen-renovation.md";
+    assert.equal(labelInMarkdown(site, publishedPath), "ブログ");
+
+    // 下書きのままの記事にはファイルが無い。書き戻しの対象にもならない。
+    await addPost(site, admin.session, {
+      title: "Curtain selection",
+      categorySlug: "column",
+      categoryLabel: "ブログ",
+    });
+    assert.equal(site.github.files.has("content/posts/curtain-selection.md"), false);
+
+    const renamed = await site.call(site.handlers.categoryPatch, {
+      session: admin.session,
+      method: "PATCH",
+      params: { id: column.id },
+      body: { label: "暮らしのコラム" },
+    });
+    assert.equal(renamed.status, 200);
+    assert.equal(renamed.json.republishedPosts, 1);
+
+    // 公開済みの記事は frontmatter まで新しい名前になっている。
+    assert.equal(labelInMarkdown(site, publishedPath), "暮らしのコラム");
+    // 下書きはファイルが作られないまま。
+    assert.equal(site.github.files.has("content/posts/curtain-selection.md"), false);
+  });
+
+  it("説明だけ変えたときは、記事の Markdown を書き換えない", async () => {
+    const site = await createSite();
+    const admin = await site.seedAdmin();
+    const column = await addCategory(site, admin.session, "column", "ブログ");
+    const id = await addPost(site, admin.session, {
+      title: "Kitchen renovation",
+      categorySlug: "column",
+      categoryLabel: "ブログ",
+    });
+    await publishPost(site, admin.session, id);
+
+    const patched = await site.call(site.handlers.categoryPatch, {
+      session: admin.session,
+      method: "PATCH",
+      params: { id: column.id },
+      body: { label: "ブログ", description: "暮らしの話題" },
+    });
+    assert.equal(patched.status, 200);
+    assert.equal(patched.json.republishedPosts, 0);
+  });
+
+  it("記事の書き戻しは1コミットで、失敗したら1本も書き換わらない", async () => {
+    const site = await createSite();
+    const admin = await site.seedAdmin();
+    const column = await addCategory(site, admin.session, "column", "ブログ");
+
+    const paths = [];
+    for (const title of ["Kitchen renovation", "Bathroom remodel", "Garden planning"]) {
+      const id = await addPost(site, admin.session, {
+        title,
+        categorySlug: "column",
+        categoryLabel: "ブログ",
+      });
+      await publishPost(site, admin.session, id);
+      paths.push(`content/posts/${title.toLowerCase().replaceAll(" ", "-")}.md`);
+    }
+
+    // ファイルは作れるのに、最後のブランチ付け替えだけ失敗する場合。
+    site.github.failRefUpdate = true;
+    const failed = await site.call(site.handlers.categoryPatch, {
+      session: admin.session,
+      method: "PATCH",
+      params: { id: column.id },
+      body: { label: "暮らしのコラム" },
+    });
+    assert.equal(failed.status, 500);
+
+    // 1本も書き換わっていない（3本のうち2本だけ、という状態を作らない）。
+    for (const path of paths) {
+      assert.equal(labelInMarkdown(site, path), "ブログ");
+    }
+    // D1 も元のまま。
+    const list = await site.call(site.handlers.categoriesList, { session: admin.session });
+    assert.equal(list.json.categories[0].label, "ブログ");
+
+    // 付け替えが通るようになれば、3本まとめて1コミットで書き換わる。
+    site.github.failRefUpdate = false;
+    const retried = await site.call(site.handlers.categoryPatch, {
+      session: admin.session,
+      method: "PATCH",
+      params: { id: column.id },
+      body: { label: "暮らしのコラム" },
+    });
+    assert.equal(retried.status, 200);
+    assert.equal(retried.json.republishedPosts, 3);
+    for (const path of paths) {
+      assert.equal(labelInMarkdown(site, path), "暮らしのコラム");
+    }
+    // ブランチを進めたのは1回だけ。
+    const refUpdates = site.github.calls.filter(
+      (call) => call.method === "PATCH" && call.path.startsWith("refs/heads/")
+    );
+    assert.equal(refUpdates.length, 2);
   });
 
   it("存在しないカテゴリは 404 になる", async () => {

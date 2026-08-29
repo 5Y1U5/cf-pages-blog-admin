@@ -13,6 +13,27 @@ export declare function upsertGitHubFile(env: BlogAdminEnv, config: BlogAdminCon
     commitSha: string | null;
     tokenWarning: string | null;
 } | Response>;
+/** 1コミットにまとめて書くファイル。 */
+export interface GitHubFile {
+    path: string;
+    content: string;
+}
+/**
+ * 複数のファイルを1コミットで書き換える（Git Data API）。
+ *
+ * Contents API は1回の呼び出しで1ファイルしか書けないため、カテゴリの改名のように
+ * 記事の数だけファイルを直す操作では、途中で失敗すると「3本だけ新しい名前」という
+ * 中途半端な状態が残る。戻すにも書き換えた本数ぶんのコミットが要り、その戻し自体も
+ * 失敗しうる。ここでは ref の付け替えを最後の1回にまとめ、
+ * 失敗したときは「1つも書かれていない」状態にする。
+ *
+ * 呼び出し回数はファイル数によらず5回。
+ */
+export declare function commitGitHubFiles(env: BlogAdminEnv, config: BlogAdminConfig, files: GitHubFile[], message: string): Promise<{
+    ok: true;
+    commitSha: string | null;
+    tokenWarning: string | null;
+} | Response>;
 export declare function deleteGitHubFile(env: BlogAdminEnv, config: BlogAdminConfig, path: string, message: string): Promise<{
     ok: true;
     commitSha: string | null;

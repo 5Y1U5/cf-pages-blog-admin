@@ -159,6 +159,91 @@ export async function upsertGitHubFile(
   };
 }
 
+/** 1コミットにまとめて書くファイル。 */
+export interface GitHubFile {
+  path: string;
+  content: string;
+}
+
+function gitUrl(cfg: ResolvedGitHubConfig, suffix: string): string {
+  return `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/git/${suffix}`;
+}
+
+/**
+ * 複数のファイルを1コミットで書き換える（Git Data API）。
+ *
+ * Contents API は1回の呼び出しで1ファイルしか書けないため、カテゴリの改名のように
+ * 記事の数だけファイルを直す操作では、途中で失敗すると「3本だけ新しい名前」という
+ * 中途半端な状態が残る。戻すにも書き換えた本数ぶんのコミットが要り、その戻し自体も
+ * 失敗しうる。ここでは ref の付け替えを最後の1回にまとめ、
+ * 失敗したときは「1つも書かれていない」状態にする。
+ *
+ * 呼び出し回数はファイル数によらず5回。
+ */
+export async function commitGitHubFiles(
+  env: BlogAdminEnv,
+  config: BlogAdminConfig,
+  files: GitHubFile[],
+  message: string
+): Promise<{ ok: true; commitSha: string | null; tokenWarning: string | null } | Response> {
+  const cfg = resolveGitHubTarget(env, config);
+  if (cfg instanceof Response) return cfg;
+  if (files.length === 0) return { ok: true, commitSha: null, tokenWarning: null };
+
+  const ref = `heads/${cfg.branch}`;
+  const head = await githubFetch<{ object?: { sha?: string } }>(
+    cfg,
+    gitUrl(cfg, `ref/${ref}`)
+  );
+  if (!head.ok) return serverError(githubFailureMessage("read", head.status, cfg));
+  const baseCommitSha = head.data.object?.sha;
+  if (!baseCommitSha) return serverError("GitHub write failed: branch head not found.");
+
+  const baseCommit = await githubFetch<{ tree?: { sha?: string } }>(
+    cfg,
+    gitUrl(cfg, `commits/${baseCommitSha}`)
+  );
+  if (!baseCommit.ok) {
+    return serverError(githubFailureMessage("read", baseCommit.status, cfg));
+  }
+  const baseTreeSha = baseCommit.data.tree?.sha;
+  if (!baseTreeSha) return serverError("GitHub write failed: base tree not found.");
+
+  const tree = await githubFetch<{ sha?: string }>(cfg, gitUrl(cfg, "trees"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      base_tree: baseTreeSha,
+      tree: files.map((file) => ({
+        path: file.path,
+        mode: "100644",
+        type: "blob",
+        content: file.content,
+      })),
+    }),
+  });
+  if (!tree.ok) return serverError(githubFailureMessage("write", tree.status, cfg));
+  if (!tree.data.sha) return serverError("GitHub write failed: tree was not created.");
+
+  const commit = await githubFetch<{ sha?: string }>(cfg, gitUrl(cfg, "commits"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, tree: tree.data.sha, parents: [baseCommitSha] }),
+  });
+  if (!commit.ok) return serverError(githubFailureMessage("write", commit.status, cfg));
+  if (!commit.data.sha) return serverError("GitHub write failed: commit was not created.");
+
+  // ここで初めてブランチが動く。ここまでのどこで失敗しても、公開側からは何も変わっていない。
+  const updated = await githubFetch<Record<string, unknown>>(cfg, gitUrl(cfg, `refs/${ref}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sha: commit.data.sha }),
+  });
+  if (!updated.ok) return serverError(githubFailureMessage("write", updated.status, cfg));
+
+  return { ok: true, commitSha: commit.data.sha, tokenWarning: updated.tokenWarning };
+}
+
 export async function deleteGitHubFile(
   env: BlogAdminEnv,
   config: BlogAdminConfig,

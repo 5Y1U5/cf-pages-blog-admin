@@ -2,20 +2,24 @@
 
 semver に従う。major に倒す条件は README の「バージョニング」を参照。
 
-## 2.1.0
+## 3.0.0
 
 カテゴリを管理画面から追加・改名できるようにした。これまで D1 のカテゴリを足したり名前を
 変えたりする手段が無く、リポジトリの `blog-categories.json` を直接編集しても、次に記事を
 公開した時点で D1 の内容に上書きされて元に戻っていた。
 
-**migration は増えていない。導入先では次の3つが要る**（Renovate の更新 PR では配れない）。
+記事一覧のヘッダーにボタンが1つ増えるため major にした（バージョニング基準4）。
+**major は自動マージされない。** 導入先では次の3つを人が入れる。
+2 を入れる前に配ると、増えたボタンを押したときだけ 404 になる。
+
+**migration は増えていない。**（Renovate の更新 PR では 1・2 を配れない）
 
 1. `npx cf-pages-blog-admin sync-routes` を流して
    `functions/api/admin/categories/[id].ts` に `onRequestPatch` を足す。
    忘れると画面から名前を変えたときだけ 405 になる
 2. `/admin/categories` のページを1枚足す（Next.js は `src/app/admin/categories/page.tsx`、
    Vite + wouter はルーター定義に 1 行。`examples/` に実例がある）
-3. `package.json` のこのパッケージのバージョンを上げる
+3. `package.json` のこのパッケージを `#v3.0.0` へ上げる
 
 - `PATCH /api/admin/categories/<id>` を追加。`label` と `description` を変更できる。
   権限は追加（POST）と同じ `admin` / `client_publisher`

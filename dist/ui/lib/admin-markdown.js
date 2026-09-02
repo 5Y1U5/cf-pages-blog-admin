@@ -2,7 +2,7 @@
 //
 // 記事の保存形式はマークダウンのまま。編集中だけ HTML として扱い、保存時にマークダウンへ戻すため、
 // 公開パイプライン（server/_shared/posts.ts）は変換の有無に影響されない。
-import { marked } from "marked";
+import { Marked } from "marked";
 // turndown と turndown-plugin-gfm は CommonJS で、DOM も要る。
 // モジュールの先頭で import すると、サーバー側で管理画面を描画する構成
 // （Workers 上の SSR など）で読み込みごと失敗する。ブラウザで初めて必要になった時点で読む。
@@ -74,10 +74,53 @@ async function buildTurndown() {
     turndown = service;
     return service;
 }
+// 本文に生の HTML は書かせない方針（src/content/article-blocks.ts の冒頭コメント）。
+// 公開側は remark-html の sanitize:true で生 HTML を落としているのに、管理画面のプレビューだけ
+// marked の出力をそのまま dangerouslySetInnerHTML へ渡していたため、本文に仕込まれた
+// <img src=x onerror=...> が記事を開いた管理者のセッションで動いてしまう状態だった。
+// 公開側と同じ結果になるよう、html トークンを捨て、http(s)/mailto/tel 以外のスキームを外す。
+// marked の共有インスタンスへ use() すると、同じページの他の利用者にも影響が出る。専用のインスタンスを持つ。
+/** 先頭のスキーム部分。`javascript:` などを見つけるために使う。 */
+const SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
+/** リンク・画像で通してよいスキーム。公開側（hast-util-sanitize の既定）に合わせる。 */
+const SAFE_SCHEMES = new Set(["http:", "https:", "mailto:", "tel:"]);
+/**
+ * URL がスクリプトを起動しうるかどうかを見る。
+ * ブラウザは href の中の HTML 実体参照を解いてから解釈するので（`&#106;avascript:` は `javascript:`）、
+ * 判定の前に数値参照を戻し、空白・制御文字も落としてから確かめる。
+ */
+function isBlockedUrl(href) {
+    const normalized = href
+        .replace(/[\u0000-\u0020\u007f]/g, "")
+        .replace(/&#(\d+);?/g, (_m, code) => String.fromCodePoint(Number(code)))
+        .replace(/&#x([0-9a-f]+);?/gi, (_m, code) => String.fromCodePoint(parseInt(code, 16)));
+    const scheme = SCHEME_RE.exec(normalized);
+    // スキームが無いもの（相対パス・#見出し）はそのまま通す
+    if (!scheme)
+        return false;
+    return !SAFE_SCHEMES.has(scheme[0].toLowerCase());
+}
+const previewMarked = new Marked({ async: false, gfm: true, breaks: false }, {
+    renderer: {
+        // 生の HTML（ブロック・インラインとも）は出力しない
+        html: () => "",
+        link(token) {
+            if (isBlockedUrl(token.href))
+                token.href = "";
+            // false を返すと marked の既定の描画に任せられる
+            return false;
+        },
+        image(token) {
+            if (isBlockedUrl(token.href))
+                token.href = "";
+            return false;
+        },
+    },
+});
 export function markdownToHtml(markdown) {
     if (!markdown.trim())
         return "";
-    return marked.parse(markdown, { async: false, gfm: true, breaks: false });
+    return previewMarked.parse(markdown, { async: false });
 }
 /**
  * turndown を先に読み込んでおく。編集画面の表示時に呼んでおくと、

@@ -1,8 +1,8 @@
 import { postFilePath } from "../../../config/index.js";
 import { badRequest, json, normalizeString, nowIso, readJson, requireDb, requireUser, } from "../../_shared/admin.js";
 import { recordAudit } from "../../_shared/audit.js";
-import { commitGitHubFiles, upsertGitHubFile } from "../../_shared/github.js";
-import { CATEGORY_SELECT, categoryRowsToJson, draftToMarkdown, } from "../../_shared/posts.js";
+import { commitGitHubFiles, readGitHubFile, upsertGitHubFile, } from "../../_shared/github.js";
+import { CATEGORY_SELECT, categoryRowsToJson, draftToMarkdown, replaceFrontmatterCategoryLabel, } from "../../_shared/posts.js";
 function idParam(value) {
     if (Array.isArray(value))
         return value[0] || "";
@@ -30,29 +30,56 @@ export function createCategoryDetailHandlers(config) {
         return commit instanceof Response ? commit : null;
     }
     /**
-     * 公開済み記事の Markdown を組み立て直す。
+     * サイトに出ている記事の Markdown を、新しい表示名へ書き換える。
      *
      * 公開時に frontmatter へ表示名を焼き込んでいる（`categoryLabel`）ため、
      * カテゴリ表だけ直しても、公開済みの記事ページは古い名前のままになる。
      * 導入側のサイトは frontmatter を優先して読むので、ここを直さないと
      * 一覧と記事ページで名前が食い違う。
      *
-     * 組み立ては公開処理と同じ `draftToMarkdown` を通す（二重管理にしないため）。
-     * 対象は `status = 'published'` のものだけ。下書きと取り下げ済みには
-     * そもそもファイルが無い（取り下げ時に消している）。
+     * 対象は「GitHub にファイルがある記事」。`status = 'published'` だけを見ていた頃は、
+     * 公開中の記事を開いて保存した記事（status は 'draft' に戻るがサイトには出たまま）が
+     * 漏れていた。公開取り下げ済みの記事は `published_url` が NULL なので入らない。
+     *
+     * - `status = 'published'` … 公開処理と同じ `draftToMarkdown` で組み立て直す（二重管理にしない）
+     * - それ以外（編集中の公開記事）… まだ公開していない編集や `draft: true` まで書き出して
+     *   しまうため組み立て直さず、いまのファイルを読んで `categoryLabel` の行だけ差し替える
+     *
+     * 読めなかった記事・`categoryLabel` の行が無い記事は書き換えずに `skipped` へ入れて応答で返す
+     * （黙って落とすと、古い名前が残った理由が誰にも分からなくなる）。
      */
-    async function publishedMarkdownFiles(db, clientId, categorySlug) {
+    async function renamedMarkdownFiles(ctx, db, clientId, categorySlug, label) {
         const { results } = await db
             .prepare(`SELECT * FROM post_drafts
-         WHERE client_id = ? AND category_slug = ? AND status = 'published'
+         WHERE client_id = ? AND category_slug = ?
+           AND (status = 'published' OR published_url IS NOT NULL)
          ORDER BY created_at ASC`)
             .bind(clientId, categorySlug)
             .all();
         const categories = await db.prepare(CATEGORY_SELECT).bind(clientId).all();
-        return (results || []).map((post) => ({
-            path: post.source_path || postFilePath(config, post.slug),
-            content: draftToMarkdown(post, config, categories.results || []),
-        }));
+        const files = [];
+        const skipped = [];
+        for (const post of results || []) {
+            const path = post.source_path || postFilePath(config, post.slug);
+            if (post.status === "published") {
+                files.push({ path, content: draftToMarkdown(post, config, categories.results || []) });
+                continue;
+            }
+            const current = await readGitHubFile(ctx.env, config, path);
+            if (current instanceof Response)
+                return current;
+            if ("missing" in current) {
+                skipped.push({ id: post.id, slug: post.slug });
+                continue;
+            }
+            const content = replaceFrontmatterCategoryLabel(current.content, label);
+            if (content === null || content === current.content) {
+                skipped.push({ id: post.id, slug: post.slug });
+                continue;
+            }
+            files.push({ path, content });
+        }
+        return { files, skipped };
     }
     /**
      * 表示名・説明の変更。
@@ -110,6 +137,7 @@ export function createCategoryDetailHandlers(config) {
                 },
                 updatedPosts: 0,
                 republishedPosts: 0,
+                skippedPosts: [],
             });
         }
         const now = nowIso();
@@ -128,25 +156,11 @@ export function createCategoryDetailHandlers(config) {
                 .run();
             updatedPosts = result.meta?.changes ?? 0;
         }
-        // カテゴリ一覧の JSON と、公開済み記事の Markdown をまとめて1コミットで書き換える。
-        // 記事を1本ずつコミットすると、途中で失敗したときに「3本だけ新しい名前」という
-        // 中途半端な状態が残り、戻す作業もまた失敗しうる。1コミットなら結果は
-        // 「全部書けた」か「1つも書けていない」のどちらかにしかならない。
-        const files = [
-            {
-                path: config.content.categoriesJsonPath,
-                content: await categoriesJson(db, user.client_id),
-            },
-        ];
-        // 表示名が変わっていない（説明だけ直した）ときは記事のファイルは変わらない。
-        if (labelChanged) {
-            files.push(...(await publishedMarkdownFiles(db, user.client_id, category.slug)));
-        }
-        const republishedPosts = files.length - 1;
-        const commit = await commitGitHubFiles(ctx.env, config, files, `chore: rename blog category ${category.slug} from admin`);
-        if (commit instanceof Response) {
-            // 書き出しに失敗したら D1 も元へ戻す。JSON と D1 がずれたまま残ると、
-            // 次に誰かが記事を公開した時点で古い名前へ黙って戻る。
+        /**
+         * GitHub へ書けなかったときに D1 を元へ戻す。
+         * JSON と D1 がずれたまま残ると、次に誰かが記事を公開した時点で古い名前へ黙って戻る。
+         */
+        const rollback = async () => {
             await db
                 .prepare("UPDATE categories SET label = ?, description = ?, updated_at = ? WHERE id = ? AND client_id = ?")
                 .bind(category.label, category.description, nowIso(), category.id, user.client_id)
@@ -157,6 +171,32 @@ export function createCategoryDetailHandlers(config) {
                     .bind(category.label, user.client_id, category.slug)
                     .run();
             }
+        };
+        // カテゴリ一覧の JSON と、サイトに出ている記事の Markdown をまとめて1コミットで書き換える。
+        // 記事を1本ずつコミットすると、途中で失敗したときに「3本だけ新しい名前」という
+        // 中途半端な状態が残り、戻す作業もまた失敗しうる。1コミットなら結果は
+        // 「全部書けた」か「1つも書けていない」のどちらかにしかならない。
+        const files = [
+            {
+                path: config.content.categoriesJsonPath,
+                content: await categoriesJson(db, user.client_id),
+            },
+        ];
+        // 表示名が変わっていない（説明だけ直した）ときは記事のファイルは変わらない。
+        let skippedPosts = [];
+        if (labelChanged) {
+            const renamed = await renamedMarkdownFiles(ctx, db, user.client_id, category.slug, label);
+            if (renamed instanceof Response) {
+                await rollback();
+                return renamed;
+            }
+            files.push(...renamed.files);
+            skippedPosts = renamed.skipped;
+        }
+        const republishedPosts = files.length - 1;
+        const commit = await commitGitHubFiles(ctx.env, config, files, `chore: rename blog category ${category.slug} from admin`);
+        if (commit instanceof Response) {
+            await rollback();
             return commit;
         }
         await recordAudit(db, ctx.request, user, {
@@ -176,6 +216,8 @@ export function createCategoryDetailHandlers(config) {
             },
             updatedPosts,
             republishedPosts,
+            // 公開中なのに書き戻せなかった記事。空でない場合は古い表示名が残っている。
+            skippedPosts,
         });
     };
     const onRequestDelete = async (ctx) => {

@@ -88,6 +88,38 @@ export function draftToMarkdown(draft, config, categories = []) {
     ].filter((line) => typeof line === "string");
     return `${frontmatter.join("\n")}\n\n${draft.body_markdown.trim()}\n`;
 }
+/**
+ * 公開済みの Markdown の frontmatter から `categoryLabel` の行だけを差し替える。
+ *
+ * カテゴリを改名したとき、公開中の記事は D1 の下書きから組み立て直せない
+ * （まだ公開していない編集や `draft: true` まで一緒に書き出してしまうため）。
+ * 表示名の1行だけを直して、いま出ている記事の中身はそのまま保つ。
+ *
+ * frontmatter が無い・`categoryLabel` の行が無い場合は null を返し、呼び出し側が飛ばす。
+ */
+export function replaceFrontmatterCategoryLabel(markdown, label) {
+    const normalized = markdown.replace(/\r\n/g, "\n");
+    if (!normalized.startsWith("---\n"))
+        return null;
+    const end = normalized.indexOf("\n---", 3);
+    if (end === -1)
+        return null;
+    const head = normalized.slice(0, end);
+    const rest = normalized.slice(end);
+    let replaced = false;
+    const nextHead = head
+        .split("\n")
+        .map((line) => {
+        if (replaced || !/^categoryLabel:/.test(line))
+            return line;
+        replaced = true;
+        return `categoryLabel: ${yamlString(label)}`;
+    })
+        .join("\n");
+    if (!replaced)
+        return null;
+    return `${nextHead}${rest}`;
+}
 export function categoryRowsToJson(rows) {
     const data = rows
         .filter((row) => row.is_active === 1)

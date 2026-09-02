@@ -8,6 +8,20 @@ import type { BlogAdminEnv } from "../../config/env.js";
  * （無期限をやめる判断は運用側の話で、公開のたびに警告を出すことではない）。
  */
 export declare const TOKEN_EXPIRY_WARNING_DAYS = 30;
+/**
+ * いま公開されているファイルの中身を読む。
+ *
+ * 書き戻しの前に「サイトに出ている現物」を見たいときに使う。D1 の下書きから組み立て直すと、
+ * まだ公開していない編集まで一緒に出てしまうため、直したい1行だけを差し替える用途で呼ぶ。
+ * ファイルが無いときは `missing: true` を返す（呼び出し側が飛ばせるように、エラーにしない）。
+ */
+export declare function readGitHubFile(env: BlogAdminEnv, config: BlogAdminConfig, path: string): Promise<{
+    ok: true;
+    content: string;
+} | {
+    ok: true;
+    missing: true;
+} | Response>;
 export declare function upsertGitHubFile(env: BlogAdminEnv, config: BlogAdminConfig, path: string, content: string, message: string): Promise<{
     ok: true;
     commitSha: string | null;

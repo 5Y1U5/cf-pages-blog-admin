@@ -143,8 +143,15 @@ export function AdminCategoriesClient({ router }) {
         cancelEditing();
         const followed = data.updatedPosts || 0;
         const republished = data.republishedPosts || 0;
+        const skipped = data.skippedPosts || [];
+        // 書き戻せなかった記事は、サイト側に古い名前が残る。次の公開で直る旨まで伝える。
+        const skippedNotice = skipped.length
+            ? ` サイト側の書き換えができなかった記事が ${skipped.length} 件あります（${skipped
+                .map((post) => post.slug)
+                .join("、")}）。この記事を次に公開すると新しい名前になります。`
+            : "";
         setMessage(followed > 0
-            ? `名前を変更しました。このカテゴリの記事 ${followed} 件（うち公開中 ${republished} 件）にも反映しています。${RENAME_NOTICE}`
+            ? `名前を変更しました。このカテゴリの記事 ${followed} 件（うち公開中 ${republished} 件）にも反映しています。${RENAME_NOTICE}${skippedNotice}`
             : "名前を変更しました。");
     }
     async function removeCategory(category) {

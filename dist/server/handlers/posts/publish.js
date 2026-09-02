@@ -39,10 +39,15 @@ function todayInConfiguredZone(config) {
     const offsetMs = config.publish.timezoneOffsetMinutes * 60 * 1000;
     return new Date(Date.now() + offsetMs).toISOString().slice(0, 10);
 }
+/**
+ * 公開に失敗したときに、公開処理を始める前の状態へ戻す。
+ *
+ * 'publishing' は前回の公開が途中で止まった跡なので、そこへは戻さず 'approved' に倒す。
+ * それ以外は元の状態のまま戻す。公開済みの記事を公開し直して失敗した場合、記事はサイトに
+ * 出たままなのに 'approved'（承認済み）と表示されてしまうため、'published' は 'published' に戻す。
+ */
 async function resetPublishingStatus(db, post, userId) {
-    const rollbackStatus = ["draft", "review", "approved", "archived"].includes(post.status)
-        ? post.status
-        : "approved";
+    const rollbackStatus = post.status === "publishing" ? "approved" : post.status;
     await db
         .prepare(`UPDATE post_drafts
        SET status = ?, updated_by = ?, updated_at = ?

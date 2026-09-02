@@ -77,9 +77,19 @@ export function createPostsHandlers(config) {
         // slug はタイトルから自動生成し、有効化できなければ自動採番する（利用者は触らなくてよい）。
         // 明示指定された slug は形式さえ正しければ尊重する。タイトルから作った slug は、
         // 記事を表さない短いもの（日本語タイトルの数字だけ等）なら自動採番に回す。
+        //
+        // 画面はタイトルを打つたびに slug 欄へ自動生成した値を入れ、保存でその値をそのまま送る
+        // （AdminEditorClient の setSlug(slugify(title))）。送られた値だけを見ると明示指定と
+        // 区別がつかず、「3つのコツ」で slug="3" のまま /post/3 で公開されていた。
+        // タイトルから作った値と同じものは、画面の自動入力とみなして同じ判定にかける。
         const givenSlug = normalizeString(payload.slug);
         const derivedSlug = slugify(title);
-        const requestedSlug = givenSlug || (isUsableSlug(derivedSlug) ? derivedSlug : "");
+        const isAutoFilled = !givenSlug || givenSlug === derivedSlug;
+        const requestedSlug = isAutoFilled
+            ? isUsableSlug(derivedSlug)
+                ? derivedSlug
+                : ""
+            : givenSlug;
         const baseSlug = requestedSlug && isValidSlug(requestedSlug) ? requestedSlug : fallbackSlug();
         // 同名タイトル等で slug が衝突する場合は連番を付けてユニーク化する。
         const slug = await ensureUniqueSlug(db, user.client_id, baseSlug);

@@ -110,6 +110,10 @@ export function createPostDetailHandlers(config) {
             return json({ ok: false, error: "not_found" }, { status: 404 });
         // GitHub 上に Markdown がある（公開済み/反映中、または取り込み元あり）場合は、
         // サイトからも消えるよう先にファイルを削除する。未公開の下書きはファイルが無いのでスキップ。
+        //
+        // 既知の穴: 公開を取り下げた記事はこの条件から外れる（status は draft、published_url は NULL）。
+        // 取り下げは `draft: true` で上書きするだけでファイルを消さないため、取り下げてから削除すると
+        // GitHub 側にファイルが残る。導入先のサイトが draft を見て除外していれば表示はされない。
         const hasFile = post.status === "published" ||
             post.status === "publishing" ||
             Boolean(post.published_url) ||

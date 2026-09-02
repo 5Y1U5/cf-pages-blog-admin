@@ -7,6 +7,8 @@ const USER_AGENT = "cf-pages-blog-admin";
 
 interface GitHubContentResponse {
   sha?: string;
+  content?: string;
+  encoding?: string;
 }
 
 interface ResolvedGitHubConfig {
@@ -39,6 +41,14 @@ function utf8ToBase64(value: string): string {
   let binary = "";
   for (const b of bytes) binary += String.fromCharCode(b);
   return btoa(binary);
+}
+
+function base64ToUtf8(value: string): string {
+  // Contents API の content は 60 文字ごとに改行が入る
+  const binary = atob(value.replace(/\s/g, ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
 }
 
 /**
@@ -111,6 +121,33 @@ function contentsUrl(cfg: ResolvedGitHubConfig, path: string): string {
   return `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${encodeURIComponent(
     path
   ).replaceAll("%2F", "/")}`;
+}
+
+/**
+ * いま公開されているファイルの中身を読む。
+ *
+ * 書き戻しの前に「サイトに出ている現物」を見たいときに使う。D1 の下書きから組み立て直すと、
+ * まだ公開していない編集まで一緒に出てしまうため、直したい1行だけを差し替える用途で呼ぶ。
+ * ファイルが無いときは `missing: true` を返す（呼び出し側が飛ばせるように、エラーにしない）。
+ */
+export async function readGitHubFile(
+  env: BlogAdminEnv,
+  config: BlogAdminConfig,
+  path: string
+): Promise<{ ok: true; content: string } | { ok: true; missing: true } | Response> {
+  const cfg = resolveGitHubTarget(env, config);
+  if (cfg instanceof Response) return cfg;
+
+  const res = await githubFetch<GitHubContentResponse>(
+    cfg,
+    `${contentsUrl(cfg, path)}?ref=${encodeURIComponent(cfg.branch)}`
+  );
+  if (!res.ok) {
+    if (res.status === 404) return { ok: true, missing: true };
+    return serverError(githubFailureMessage("read", res.status, cfg));
+  }
+  if (typeof res.data.content !== "string") return { ok: true, missing: true };
+  return { ok: true, content: base64ToUtf8(res.data.content) };
 }
 
 export async function upsertGitHubFile(

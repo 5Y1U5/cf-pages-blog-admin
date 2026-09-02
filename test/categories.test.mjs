@@ -372,6 +372,95 @@ describe("カテゴリの管理", () => {
     assert.equal(refUpdates.length, 2);
   });
 
+  it("公開中の記事を保存して下書きに戻っていても、改名がサイトへ届く", async () => {
+    const site = await createSite();
+    const admin = await site.seedAdmin();
+    const column = await addCategory(site, admin.session, "column", "ブログ");
+
+    const id = await addPost(site, admin.session, {
+      title: "Kitchen renovation",
+      categorySlug: "column",
+      categoryLabel: "ブログ",
+    });
+    await publishPost(site, admin.session, id);
+    const path = "content/posts/kitchen-renovation.md";
+    assert.equal(labelInMarkdown(site, path), "ブログ");
+
+    // 公開済みの記事を開いて「保存」を押した状態。status は draft に戻るが、
+    // published_url は残り、サイトには公開時の本文が出たままになる。
+    const saved = await site.call(site.handlers.postPut, {
+      session: admin.session,
+      method: "PUT",
+      params: { id },
+      body: {
+        title: "Kitchen renovation",
+        categorySlug: "column",
+        categoryLabel: "ブログ",
+        bodyMarkdown: "まだ公開していない書きかけの本文",
+      },
+    });
+    assert.equal(saved.status, 200);
+    const row = await site.db
+      .prepare("SELECT status, published_url FROM post_drafts WHERE id = ?")
+      .bind(id)
+      .first();
+    assert.equal(row.status, "draft");
+    assert.ok(row.published_url);
+
+    const renamed = await site.call(site.handlers.categoryPatch, {
+      session: admin.session,
+      method: "PATCH",
+      params: { id: column.id },
+      body: { label: "暮らしのコラム" },
+    });
+    assert.equal(renamed.status, 200);
+    assert.equal(renamed.json.republishedPosts, 1);
+    assert.deepEqual(renamed.json.skippedPosts, []);
+
+    const markdown = site.github.files.get(path);
+    // 表示名だけが新しくなる。
+    assert.equal(labelInMarkdown(site, path), "暮らしのコラム");
+    // 書きかけの本文は出さない。公開状態（draft: false）も変えない。
+    assert.equal(markdown.includes("まだ公開していない書きかけの本文"), false);
+    assert.equal(markdown.includes("draft: false"), true);
+  });
+
+  it("公開中の記事のファイルが消えていたら、書き戻せなかった記事として返す", async () => {
+    const site = await createSite();
+    const admin = await site.seedAdmin();
+    const column = await addCategory(site, admin.session, "column", "ブログ");
+
+    const id = await addPost(site, admin.session, {
+      title: "Kitchen renovation",
+      categorySlug: "column",
+      categoryLabel: "ブログ",
+    });
+    await publishPost(site, admin.session, id);
+    await site.call(site.handlers.postPut, {
+      session: admin.session,
+      method: "PUT",
+      params: { id },
+      body: {
+        title: "Kitchen renovation",
+        categorySlug: "column",
+        categoryLabel: "ブログ",
+        bodyMarkdown: "書きかけ",
+      },
+    });
+    // リポジトリ側で手作業で消された想定。
+    site.github.files.delete("content/posts/kitchen-renovation.md");
+
+    const renamed = await site.call(site.handlers.categoryPatch, {
+      session: admin.session,
+      method: "PATCH",
+      params: { id: column.id },
+      body: { label: "暮らしのコラム" },
+    });
+    assert.equal(renamed.status, 200);
+    assert.equal(renamed.json.republishedPosts, 0);
+    assert.deepEqual(renamed.json.skippedPosts, [{ id, slug: "kitchen-renovation" }]);
+  });
+
   it("存在しないカテゴリは 404 になる", async () => {
     const site = await createSite();
     const admin = await site.seedAdmin();

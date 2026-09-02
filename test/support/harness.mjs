@@ -33,15 +33,17 @@ export async function createSite({ upTo = "9999", config: overrides = {} } = {})
     GITHUB_BRANCH: "main",
   };
 
-  const [me, login, users, userDetail, posts, categories, categoryDetail] = await Promise.all([
-    dist("server/handlers/me"),
-    dist("server/handlers/auth/login"),
-    dist("server/handlers/users/index"),
-    dist("server/handlers/users/detail"),
-    dist("server/handlers/posts/index"),
-    dist("server/handlers/categories/index"),
-    dist("server/handlers/categories/detail"),
-  ]);
+  const [me, login, users, userDetail, posts, postDetail, categories, categoryDetail] =
+    await Promise.all([
+      dist("server/handlers/me"),
+      dist("server/handlers/auth/login"),
+      dist("server/handlers/users/index"),
+      dist("server/handlers/users/detail"),
+      dist("server/handlers/posts/index"),
+      dist("server/handlers/posts/detail"),
+      dist("server/handlers/categories/index"),
+      dist("server/handlers/categories/detail"),
+    ]);
   const publish = await dist("server/handlers/posts/publish");
 
   const handlers = {
@@ -52,6 +54,7 @@ export async function createSite({ upTo = "9999", config: overrides = {} } = {})
     userPut: userDetail.createUserDetailHandlers(config).onRequestPut,
     postsList: posts.createPostsHandlers(config).onRequestGet,
     postsCreate: posts.createPostsHandlers(config).onRequestPost,
+    postPut: postDetail.createPostDetailHandlers(config).onRequestPut,
     postPublish: publish.createPublishHandlers(config).onRequestPost,
     categoriesList: categories.createCategoriesHandlers(config).onRequestGet,
     categoriesCreate: categories.createCategoriesHandlers(config).onRequestPost,

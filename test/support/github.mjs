@@ -81,7 +81,11 @@ async function stubFetch(url, init = {}) {
   }
   if (method === "GET") {
     if (!current.files.has(path)) return jsonResponse(404, { message: "Not Found" });
-    return jsonResponse(200, { sha: `sha_${path}` });
+    return jsonResponse(200, {
+      sha: `sha_${path}`,
+      encoding: "base64",
+      content: Buffer.from(current.files.get(path), "utf8").toString("base64"),
+    });
   }
   if (method === "PUT") {
     const body = JSON.parse(init.body);

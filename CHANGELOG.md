@@ -2,7 +2,7 @@
 
 semver に従う。major に倒す条件は README の「バージョニング」を参照。
 
-## Unreleased
+## 3.1.2
 
 - 編集画面のプレビューが本文中の生 HTML をそのまま描いていたのをやめた。marked の出力を
   `dangerouslySetInnerHTML` へ渡していたため、本文に `<img src=x onerror=...>` が入っていると

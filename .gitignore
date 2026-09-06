@@ -7,3 +7,6 @@ node_modules/
 
 # 個人メモ（導入先の具体名を含むため公開しない）
 CLAUDE.local.md
+
+# ブラウザで動作確認したときの出力（スクショ・スナップショット）
+.playwright-mcp/

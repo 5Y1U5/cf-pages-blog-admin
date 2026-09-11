@@ -27,7 +27,9 @@ migration が1本増え、画面の挙動も変わるため major にした（�
 - `PUT` の応答が `{ ok, slug, publishedUrl, warning? }` になった（従来は `{ ok }` だけ）
 - 公開側の部品 `server/public/slug-redirect` を追加。`createSlugRedirectMiddleware(config)`（Pages Functions の
   `_middleware`）と `resolvePostRedirect(db, config, pathname)`。転送先は記事のいまの `published_url`。
-  公開を取り下げた記事・未公開の記事へは送らない
+  判定も `published_url` だけ（保存で `status` が draft に戻っても転送は止まらない）。
+  公開を取り下げた記事へは送らない。旧 URL で別の記事を公開したら、その転送は消える
+- 編集画面: 既存記事で slug 欄を空にして保存しても、タイトルから作り直さない（サーバーは「変えない」と扱う）
 - 記事の削除で `post_redirects` も消す
 - 編集画面: 保存済みの記事でも slug 欄を編集できる。公開済みの記事で値を変えると
   「保存すると URL が変わります」と出す。保存の応答の `warning` をメッセージに出す

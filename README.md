@@ -346,7 +346,9 @@ export const onRequest = createSlugRedirectMiddleware(blogAdminConfig);
 
 転送表に当たれば 301（クエリ文字列は引き継ぐ）、外れれば次へ流す。先に表を引いてから流すので、
 `/* /index.html 200` の SPA でも効く。転送先は記事のいまの `published_url`。
-公開を取り下げた記事（`published_url` が NULL）や未公開の記事へは送らない（404 のまま）。
+判定も `published_url` だけで行う（公開中の記事を開いて保存すると `status` は draft に戻るが、転送は止まらない）。
+公開を取り下げた記事（`published_url` が NULL）へは送らない（404 のまま）。
+旧 URL を別の記事がいま使っている（同じ URL で新しい記事を公開した）ときは転送せず、新しい記事を出す。
 
 Pages Functions を使わない Worker のサイトは、`resolvePostRedirect(db, config, pathname)` を
 fetch の先頭で呼び、返ってきたパスへ `Response.redirect(..., 301)` する。

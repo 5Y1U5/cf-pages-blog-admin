@@ -120,11 +120,10 @@ describe("既存記事の slug 変更", () => {
     const post = await createPost(site, admin.session, "Kitchen renovation");
     await publishPost(site, admin.session, post.id);
 
-    // 変えるたびに公開し直す（保存だけだと status が draft に戻り、転送の対象外になる）。
+    // 保存だけで status は draft に戻るが、published_url は残る（静的サイトでは記事が出たまま）。
+    // 公開し直さなくても転送は効く。
     await savePost(site, admin.session, post.id, "kitchen-remodel");
-    await publishPost(site, admin.session, post.id);
     await savePost(site, admin.session, post.id, "kitchen-makeover");
-    await publishPost(site, admin.session, post.id);
 
     assert.equal(
       await resolvePostRedirect(site.db, site.config, "/blog/kitchen-renovation"),
@@ -139,7 +138,7 @@ describe("既存記事の slug 変更", () => {
     assert.equal(await resolvePostRedirect(site.db, site.config, "/blog/unknown"), null);
   });
 
-  it("公開を取り下げた記事の旧 URL は転送しない（行き先も 404 になるため）", async () => {
+  it("公開済みの記事を開いて保存しただけでは転送は止まらない。取り下げると止まる", async () => {
     const site = await createSite();
     const admin = await site.seedAdmin();
     const { resolvePostRedirect } = await dist("server/public/slug-redirect");
@@ -147,11 +146,25 @@ describe("既存記事の slug 変更", () => {
     await publishPost(site, admin.session, post.id);
     await savePost(site, admin.session, post.id, "kitchen-remodel");
 
-    // 保存で status は draft に戻る（公開処理を通していない）。
+    // 保存で status は draft に戻るが、published_url は残る。転送は効いたまま。
     assert.equal((await rowOf(site, post.id)).status, "draft");
+    assert.equal(
+      await resolvePostRedirect(site.db, site.config, "/blog/kitchen-renovation"),
+      "/blog/kitchen-remodel"
+    );
+
+    // 公開を取り下げると published_url が NULL になり、旧 URL は転送しない（行き先も 404 になるため）。
+    const withdrawn = await site.call(site.handlers.postUnpublish, {
+      session: admin.session,
+      method: "POST",
+      params: { id: post.id },
+      body: {},
+    });
+    assert.equal(withdrawn.status, 200, JSON.stringify(withdrawn.json));
+    assert.equal((await rowOf(site, post.id)).published_url, null);
     assert.equal(await resolvePostRedirect(site.db, site.config, "/blog/kitchen-renovation"), null);
 
-    // 公開し直すと転送が効く。
+    // 公開し直すと転送が戻る。
     await publishPost(site, admin.session, post.id);
     assert.equal(
       await resolvePostRedirect(site.db, site.config, "/blog/kitchen-renovation"),
@@ -223,6 +236,28 @@ describe("既存記事の slug 変更", () => {
       redirects.map((r) => r.from_path),
       ["/blog/bathroom-renovation"]
     );
+  });
+
+  it("旧 URL で新しい記事を公開すると、その URL は転送されず新しい記事が出る", async () => {
+    const site = await createSite();
+    const admin = await site.seedAdmin();
+    const { resolvePostRedirect } = await dist("server/public/slug-redirect");
+    const first = await createPost(site, admin.session, "Kitchen renovation");
+    await publishPost(site, admin.session, first.id);
+    await savePost(site, admin.session, first.id, "kitchen-remodel");
+    await publishPost(site, admin.session, first.id);
+    assert.equal(
+      await resolvePostRedirect(site.db, site.config, "/blog/kitchen-renovation"),
+      "/blog/kitchen-remodel"
+    );
+
+    // 新規記事が同じ slug で公開される（改名ではなく新規作成 → 公開の経路）。
+    const second = await createPost(site, admin.session, "Kitchen renovation");
+    assert.equal(second.slug, "kitchen-renovation");
+    await publishPost(site, admin.session, second.id);
+
+    assert.equal(await resolvePostRedirect(site.db, site.config, "/blog/kitchen-renovation"), null);
+    assert.deepEqual(await redirectsOf(site), []);
   });
 
   it("転送表が無いサイトでも保存は通り、警告が付く", async () => {

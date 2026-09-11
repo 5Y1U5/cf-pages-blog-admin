@@ -168,6 +168,18 @@ export function createPublishHandlers(config) {
         }
         const commitSha = postCommit instanceof Response ? null : postCommit.commitSha;
         const publishedUrl = publicPostUrl(config, effectivePost.slug, effectivePost.post_type);
+        // この URL を「変更前の URL」として持つ転送が残っていれば消す。
+        // 別の記事が昔使っていた URL で新しい記事を公開したとき、新しい記事が古い記事へ 301 で
+        // 飛んでしまうのを防ぐ。転送表が無いサイト（migration 0008 未適用）では飛ばす。
+        try {
+            await db
+                .prepare("DELETE FROM post_redirects WHERE client_id = ? AND from_path = ? AND post_id <> ?")
+                .bind(user.client_id, publishedUrl, post.id)
+                .run();
+        }
+        catch {
+            // 表が無いだけなので何もしない
+        }
         await db
             .prepare(`UPDATE post_drafts
          SET status = 'published',

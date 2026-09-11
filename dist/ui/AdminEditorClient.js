@@ -366,7 +366,9 @@ export function AdminEditorClient({ config, router }) {
         return {
             title: title.trim(),
             ...(postTypes.length ? { postType } : {}),
-            slug: slug.trim() || slugify(title),
+            // タイトルからの自動生成は新規作成のときだけ。既存記事で欄を空にして保存したときに
+            // タイトル由来の別の URL へ変わってしまわないよう、空のまま送る（サーバーは「変えない」と扱う）。
+            slug: slug.trim() || (postId ? "" : slugify(title)),
             date,
             categorySlug,
             categoryLabel: resolvedCategoryLabel,

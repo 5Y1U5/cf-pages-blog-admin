@@ -45,6 +45,7 @@ export async function createSite({ upTo = "9999", config: overrides = {} } = {})
       dist("server/handlers/categories/detail"),
     ]);
   const publish = await dist("server/handlers/posts/publish");
+  const unpublish = await dist("server/handlers/posts/unpublish");
 
   const handlers = {
     me: me.createMeHandlers(config).onRequestGet,
@@ -57,6 +58,7 @@ export async function createSite({ upTo = "9999", config: overrides = {} } = {})
     postPut: postDetail.createPostDetailHandlers(config).onRequestPut,
     postDelete: postDetail.createPostDetailHandlers(config).onRequestDelete,
     postPublish: publish.createPublishHandlers(config).onRequestPost,
+    postUnpublish: unpublish.createUnpublishHandlers(config).onRequestPost,
     categoriesList: categories.createCategoriesHandlers(config).onRequestGet,
     categoriesCreate: categories.createCategoriesHandlers(config).onRequestPost,
     categoryPatch: categoryDetail.createCategoryDetailHandlers(config).onRequestPatch,

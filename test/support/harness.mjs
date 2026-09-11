@@ -55,6 +55,7 @@ export async function createSite({ upTo = "9999", config: overrides = {} } = {})
     postsList: posts.createPostsHandlers(config).onRequestGet,
     postsCreate: posts.createPostsHandlers(config).onRequestPost,
     postPut: postDetail.createPostDetailHandlers(config).onRequestPut,
+    postDelete: postDetail.createPostDetailHandlers(config).onRequestDelete,
     postPublish: publish.createPublishHandlers(config).onRequestPost,
     categoriesList: categories.createCategoriesHandlers(config).onRequestGet,
     categoriesCreate: categories.createCategoriesHandlers(config).onRequestPost,

@@ -56,7 +56,9 @@ async function gitDataFetch(url, init, method) {
     }
     const body = JSON.parse(init.body);
     for (const entry of current.commits.get(body.sha) || []) {
-      current.files.set(entry.path, entry.content);
+      // sha: null は「その path を tree から外す」＝削除。
+      if (entry.sha === null) current.files.delete(entry.path);
+      else current.files.set(entry.path, entry.content);
     }
     return jsonResponse(200, { object: { sha: body.sha } });
   }

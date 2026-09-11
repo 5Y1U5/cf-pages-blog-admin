@@ -182,11 +182,12 @@ export async function commitGitHubFiles(env, config, files, message) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             base_tree: baseTreeSha,
+            // content が null のものは削除。Git Data API は sha: null で「その path を tree から外す」。
             tree: files.map((file) => ({
                 path: file.path,
                 mode: "100644",
                 type: "blob",
-                content: file.content,
+                ...(file.content === null ? { sha: null } : { content: file.content }),
             })),
         }),
     });

@@ -89,15 +89,14 @@ export function draftToMarkdown(draft, config, categories = []) {
     return `${frontmatter.join("\n")}\n\n${draft.body_markdown.trim()}\n`;
 }
 /**
- * 公開済みの Markdown の frontmatter から `categoryLabel` の行だけを差し替える。
+ * 公開済みの Markdown の frontmatter から、指定した key の行だけを差し替える。
  *
- * カテゴリを改名したとき、公開中の記事は D1 の下書きから組み立て直せない
- * （まだ公開していない編集や `draft: true` まで一緒に書き出してしまうため）。
- * 表示名の1行だけを直して、いま出ている記事の中身はそのまま保つ。
+ * 公開中の記事は D1 の下書きから組み立て直せない（まだ公開していない編集や `draft: true` まで
+ * 一緒に書き出してしまうため）。直したい 1 行だけを差し替えて、いま出ている記事の中身はそのまま保つ。
  *
- * frontmatter が無い・`categoryLabel` の行が無い場合は null を返し、呼び出し側が飛ばす。
+ * frontmatter が無い・その key の行が無い場合は null を返し、呼び出し側が飛ばす。
  */
-export function replaceFrontmatterCategoryLabel(markdown, label) {
+export function replaceFrontmatterField(markdown, key, value) {
     const normalized = markdown.replace(/\r\n/g, "\n");
     if (!normalized.startsWith("---\n"))
         return null;
@@ -106,19 +105,24 @@ export function replaceFrontmatterCategoryLabel(markdown, label) {
         return null;
     const head = normalized.slice(0, end);
     const rest = normalized.slice(end);
+    const pattern = new RegExp(`^${key}:`);
     let replaced = false;
     const nextHead = head
         .split("\n")
         .map((line) => {
-        if (replaced || !/^categoryLabel:/.test(line))
+        if (replaced || !pattern.test(line))
             return line;
         replaced = true;
-        return `categoryLabel: ${yamlString(label)}`;
+        return `${key}: ${value}`;
     })
         .join("\n");
     if (!replaced)
         return null;
     return `${nextHead}${rest}`;
+}
+/** カテゴリを改名したときに `categoryLabel` の行だけを差し替える（`replaceFrontmatterField` の薄い皮）。 */
+export function replaceFrontmatterCategoryLabel(markdown, label) {
+    return replaceFrontmatterField(markdown, "categoryLabel", yamlString(label));
 }
 export function categoryRowsToJson(rows) {
     const data = rows

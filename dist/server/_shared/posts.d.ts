@@ -46,13 +46,14 @@ export declare const CATEGORY_SELECT = "SELECT id, client_id, code, slug, label,
 export declare function deriveExcerpt(body: string, max?: number): string;
 export declare function draftToMarkdown(draft: PostDraftRow, config: BlogAdminConfig, categories?: CategoryRow[]): string;
 /**
- * 公開済みの Markdown の frontmatter から `categoryLabel` の行だけを差し替える。
+ * 公開済みの Markdown の frontmatter から、指定した key の行だけを差し替える。
  *
- * カテゴリを改名したとき、公開中の記事は D1 の下書きから組み立て直せない
- * （まだ公開していない編集や `draft: true` まで一緒に書き出してしまうため）。
- * 表示名の1行だけを直して、いま出ている記事の中身はそのまま保つ。
+ * 公開中の記事は D1 の下書きから組み立て直せない（まだ公開していない編集や `draft: true` まで
+ * 一緒に書き出してしまうため）。直したい 1 行だけを差し替えて、いま出ている記事の中身はそのまま保つ。
  *
- * frontmatter が無い・`categoryLabel` の行が無い場合は null を返し、呼び出し側が飛ばす。
+ * frontmatter が無い・その key の行が無い場合は null を返し、呼び出し側が飛ばす。
  */
+export declare function replaceFrontmatterField(markdown: string, key: string, value: string): string | null;
+/** カテゴリを改名したときに `categoryLabel` の行だけを差し替える（`replaceFrontmatterField` の薄い皮）。 */
 export declare function replaceFrontmatterCategoryLabel(markdown: string, label: string): string | null;
 export declare function categoryRowsToJson(rows: CategoryRow[]): string;

@@ -300,6 +300,8 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
 
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
+  // 読み込んだ時点の slug。公開済みの記事で欄の値と違えば「保存すると URL が変わる」と知らせる。
+  const [savedSlug, setSavedSlug] = useState("");
   const [date, setDate] = useState(today());
   const [categorySlug, setCategorySlug] = useState("");
   // 記事の区分（お知らせ／ブログ等）。設定していないサイトでは使わない。
@@ -397,6 +399,7 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
     setPostId(post.id);
     setTitle(post.title || "");
     setSlug(post.slug || "");
+    setSavedSlug(post.slug || "");
     setDate(post.date || today());
     setCategorySlug(post.category_slug || "");
     if (postTypes.length) setPostType(post.post_type || postTypes[0]?.value || "");
@@ -521,10 +524,23 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
         setPostId(record.post.id);
         history.replaceState(null, "", editorPath(record.post.id));
       }
-      if (record.post?.slug) setSlug(record.post.slug);
+      if (record.post?.slug) {
+        setSlug(record.post.slug);
+        setSavedSlug(record.post.slug);
+      }
+    }
+    if (postId && typeof data === "object" && data !== null) {
+      // 既存記事の保存。slug を変えたときはサーバーが確定した値と、追随した公開 URL が返る。
+      const record = data as { slug?: string; publishedUrl?: string | null };
+      if (typeof record.slug === "string" && record.slug) {
+        setSlug(record.slug);
+        setSavedSlug(record.slug);
+      }
+      if ("publishedUrl" in record) setPublishedUrl(record.publishedUrl || "");
     }
     setStatus(nextStatus);
-    setMessage("下書きを保存しました。");
+    const saveWarning = readWarning(data);
+    setMessage(saveWarning ? `下書きを保存しました。ただし ${saveWarning}` : "下書きを保存しました。");
     return (
       postId ||
       (typeof data === "object" && data !== null
@@ -1024,7 +1040,7 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
               />
             </button>
             <p className="mt-2 text-[12px] leading-5 text-foreground/55">
-              slug・カテゴリ・要約・著者・SEO などは未入力でも、公開時に自動で設定されます。指定したい場合だけ開いてください。
+              slug・カテゴリ・要約・著者・SEO などは未入力でも、公開時に自動で設定されます。指定したい場合や、あとから変えたい場合だけ開いてください。
             </p>
           </section>
 
@@ -1037,9 +1053,17 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
                   <input
                     value={slug}
                     onChange={(event) => setSlug(event.target.value)}
-                    disabled={Boolean(postId) || !canEdit}
+                    disabled={!canEdit}
                     className="mt-2 h-11 w-full rounded-md border border-border bg-background px-3 text-[15px] disabled:bg-muted disabled:text-foreground/55"
                   />
+                  <span className="mt-1 block text-[12px] font-normal leading-5 text-foreground/55">
+                    半角の英数字とハイフンだけ。公開 URL の末尾になります。
+                  </span>
+                  {postId && publishedUrl && slug.trim() !== savedSlug ? (
+                    <span className="mt-1 block text-[12px] font-normal leading-5 text-amber-700">
+                      保存すると URL が変わります。旧 URL からは新 URL へ自動で転送されます。
+                    </span>
+                  ) : null}
                 </label>
                 <label className="block text-[12px] font-bold">
                   公開日

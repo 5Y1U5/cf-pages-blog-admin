@@ -10,7 +10,7 @@ import { type AdminUser } from "./admin.js";
  * 記録する操作の種類。
  * `<対象>.<動作>` の形で揃える。増やすときは UI 側のラベル（AUDIT_ACTION_LABELS）も足すこと。
  */
-export type AuditAction = "auth.login" | "auth.logout" | "auth.password_change" | "post.create" | "post.publish" | "post.unpublish" | "post.delete" | "user.create" | "user.update" | "user.delete" | "user.password_reset" | "category.create" | "category.update" | "category.delete" | "asset.upload";
+export type AuditAction = "auth.login" | "auth.logout" | "auth.password_change" | "post.create" | "post.publish" | "post.unpublish" | "post.rename" | "post.delete" | "user.create" | "user.update" | "user.delete" | "user.password_reset" | "category.create" | "category.update" | "category.delete" | "asset.upload";
 export interface AuditEntry {
     action: AuditAction;
     /** 対象の種類（post / user / category / asset）。ログイン系は省略する。 */

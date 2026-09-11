@@ -49,6 +49,10 @@
       "types": "./dist/server/_shared/*.d.ts",
       "default": "./dist/server/_shared/*.js"
     },
+    "./server/public/*": {
+      "types": "./dist/server/public/*.d.ts",
+      "default": "./dist/server/public/*.js"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {

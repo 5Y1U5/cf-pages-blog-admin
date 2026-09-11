@@ -20,6 +20,7 @@ const AUDIT_ACTION_LABELS = {
     "post.create": "記事を作成",
     "post.publish": "記事を公開",
     "post.unpublish": "記事を取り下げ",
+    "post.rename": "記事の slug を変更",
     "post.delete": "記事を削除",
     "user.create": "ユーザーを追加",
     "user.update": "ユーザーを変更",

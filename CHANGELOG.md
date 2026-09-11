@@ -2,6 +2,40 @@
 
 semver に従う。major に倒す条件は README の「バージョニング」を参照。
 
+## 4.0.0
+
+既存の記事の slug（URL の末尾）を管理画面から変えられるようにした。これまでは最初の保存で
+欄が固定され、変えるには D1 を直接書き換えるしかなかった。
+
+migration が1本増え、画面の挙動も変わるため major にした（バージョニング基準 2・4）。
+**major は自動マージされない。** 導入先では次の3つを人が入れる。
+
+1. `npx cf-pages-blog-admin sync-migrations` → `npx wrangler d1 migrations apply <db> --remote`
+   （`0008_post_redirects.sql`。**デプロイの前に**流す。無くても slug の変更自体は通るが、転送が効かず、
+   保存のたびに警告が出る）
+2. 記事の公開接頭辞の下に `functions/<接頭辞>/_middleware.ts` を1枚置く（README「slug の変更と旧 URL からの転送」）。
+   Worker のサイトは `resolvePostRedirect` を fetch の先頭で呼ぶ
+3. `package.json` のこのパッケージを `#v4.0.0` へ上げる
+
+2.x から上げるサイトは 3.0.0 の手順（`sync-routes` とカテゴリ画面）も一緒に入れる。
+
+- `PUT /api/admin/posts/<id>` が `slug` を受け付ける。省略・空・同じ値は変えない。
+  形式が違う／同じサイトの別の記事と重複 → 400。既存の自動投稿は `slug` を送らないので挙動は変わらない
+- 公開したことのある記事の slug を変えると、GitHub の Markdown を新しいパスへ移し（1コミットで追加＋削除）、
+  `published_url` を追随させ、旧 URL を `post_redirects` に残す。
+  `github.mode: "source"` で GitHub に書けなければ何も変えずに 500、`"backup"` は進めて `warning`
+- `PUT` の応答が `{ ok, slug, publishedUrl, warning? }` になった（従来は `{ ok }` だけ）
+- 公開側の部品 `server/public/slug-redirect` を追加。`createSlugRedirectMiddleware(config)`（Pages Functions の
+  `_middleware`）と `resolvePostRedirect(db, config, pathname)`。転送先は記事のいまの `published_url`。
+  公開を取り下げた記事・未公開の記事へは送らない
+- 記事の削除で `post_redirects` も消す
+- 編集画面: 保存済みの記事でも slug 欄を編集できる。公開済みの記事で値を変えると
+  「保存すると URL が変わります」と出す。保存の応答の `warning` をメッセージに出す
+- 操作ログに `post.rename`（旧 → 新）を追加
+- `_shared/github` の `commitGitHubFiles` が削除に対応した（`content: null`）。
+  `_shared/posts` に `replaceFrontmatterField` を追加（`replaceFrontmatterCategoryLabel` はその薄い皮になった）
+- migration `0008_post_redirects.sql` を追加
+
 ## 3.1.3
 
 - tiptap を 3.31.3 へ上げた。`@tiptap/core` の `mergeAttributes()` が `__proto__` を DOM 属性として

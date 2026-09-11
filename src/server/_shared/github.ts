@@ -196,10 +196,10 @@ export async function upsertGitHubFile(
   };
 }
 
-/** 1コミットにまとめて書くファイル。 */
+/** 1コミットにまとめて書くファイル。`content` が null のものは削除する。 */
 export interface GitHubFile {
   path: string;
-  content: string;
+  content: string | null;
 }
 
 function gitUrl(cfg: ResolvedGitHubConfig, suffix: string): string {
@@ -253,11 +253,12 @@ export async function commitGitHubFiles(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       base_tree: baseTreeSha,
+      // content が null のものは削除。Git Data API は sha: null で「その path を tree から外す」。
       tree: files.map((file) => ({
         path: file.path,
         mode: "100644",
         type: "blob",
-        content: file.content,
+        ...(file.content === null ? { sha: null } : { content: file.content }),
       })),
     }),
   });

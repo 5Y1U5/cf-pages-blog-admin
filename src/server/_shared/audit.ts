@@ -19,6 +19,7 @@ export type AuditAction =
   | "post.create"
   | "post.publish"
   | "post.unpublish"
+  | "post.rename"
   | "post.delete"
   | "user.create"
   | "user.update"

@@ -27,10 +27,10 @@ export declare function upsertGitHubFile(env: BlogAdminEnv, config: BlogAdminCon
     commitSha: string | null;
     tokenWarning: string | null;
 } | Response>;
-/** 1コミットにまとめて書くファイル。 */
+/** 1コミットにまとめて書くファイル。`content` が null のものは削除する。 */
 export interface GitHubFile {
     path: string;
-    content: string;
+    content: string | null;
 }
 /**
  * 複数のファイルを1コミットで書き換える（Git Data API）。

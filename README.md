@@ -17,6 +17,7 @@ Cloudflare Pages + D1 + R2 で動く、日本語向けのブログ管理画面�
 - リッチテキストエディタ（Markdown と相互変換）
 - 画像アップロード（ブラウザ側でリサイズ、マジックナンバー検査、R2 から配信）
 - カテゴリ管理（管理画面から追加・改名・削除。`content/blog-categories.json` へ書き戻す）
+- slug（URL の末尾）の変更。公開済みの記事は旧 URL から新 URL へ 301 で転送する
 
 ## 前提
 
@@ -318,6 +319,40 @@ content: {
 
 `requiredFields` に `slug` を入れる指定自体は有効で、サーバー側の検証はそのまま働く。
 未保存の新規記事でも公開ボタンは押せて、押すと保存してから公開が走る。
+
+### slug の変更と旧 URL からの転送
+
+既存の記事の slug は、編集画面の「詳細設定 → 公開設定」から変えられる（下書き・公開済みどちらも）。
+`PUT /api/admin/posts/<id>` の `slug` で変える。省略・空・同じ値なら変わらない。
+形式が違う（半角英数字とハイフン以外）か、同じサイトの別の記事と重複すると 400。
+
+公開したことのある記事（`published_url` がある）の slug を変えると、同じ保存の中で次が起きる。
+
+1. GitHub の `content/posts/<旧slug>.md` を `<新slug>.md` へ移す（1コミット。frontmatter の `slug` 行も差し替える）。
+   `github.mode: "source"` のサイトはここで失敗すると何も変えずに 500。`"backup"` のサイトは進めて `warning` で返す
+2. `published_url` を新しい URL に追随させる
+3. 旧 URL を `post_redirects` に残す（migration `0008_post_redirects.sql`）
+
+転送は公開側のサイトで効かせる。**記事の公開接頭辞の下**に `_middleware.ts` を1枚置く
+（サイト全体の `functions/_middleware.ts` に置かない。画像や CSS の要求まで D1 を引くことになる）。
+
+```ts
+// functions/blog/_middleware.ts（publicPathPrefix が /blog のサイト。/news もあるなら functions/news/ にも）
+import { createSlugRedirectMiddleware } from "@5y1u5/cf-pages-blog-admin/server/public/slug-redirect";
+import { blogAdminConfig } from "../../blog-admin.config";
+
+export const onRequest = createSlugRedirectMiddleware(blogAdminConfig);
+```
+
+転送表に当たれば 301（クエリ文字列は引き継ぐ）、外れれば次へ流す。先に表を引いてから流すので、
+`/* /index.html 200` の SPA でも効く。転送先は記事のいまの `published_url`。
+公開を取り下げた記事（`published_url` が NULL）や未公開の記事へは送らない（404 のまま）。
+
+Pages Functions を使わない Worker のサイトは、`resolvePostRedirect(db, config, pathname)` を
+fetch の先頭で呼び、返ってきたパスへ `Response.redirect(..., 301)` する。
+
+転送表が無いサイト（0008 未適用）でも slug の変更は通る。保存の応答に `warning` が付き、転送だけ効かない。
+記事を削除すると、その記事の転送も消える。
 
 ## パスワードの扱い（設計上の性質）
 

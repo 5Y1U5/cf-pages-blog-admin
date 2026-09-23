@@ -34,10 +34,12 @@ import {
 
 import {
   htmlToMarkdown,
-  markdownToHtml,
+  markdownToEditorHtml,
   normalizeMarkdown,
   preloadMarkdownConverter,
 } from "./lib/admin-markdown.js";
+import { ArticleBlock } from "./lib/article-block-node.js";
+import { PREVIEW_ARTICLE_CSS } from "./lib/article-preview-css.js";
 
 export interface RichTextEditorHandle {
   insertImage: (src: string, alt: string) => void;
@@ -137,8 +139,10 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
           },
         }),
         Image.configure({ inline: false, allowBase64: false }),
+        // 装飾枠（:::callout など）を崩さずに持つ塊
+        ArticleBlock,
       ],
-      content: markdownToHtml(markdown),
+      content: markdownToEditorHtml(markdown),
       editorProps: {
         attributes: {
           class: "tiptap",
@@ -169,7 +173,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
       const incoming = normalizeMarkdown(markdown);
       if (incoming === lastEmitted.current) return;
       lastEmitted.current = incoming;
-      editor.commands.setContent(markdownToHtml(incoming), { emitUpdate: false });
+      editor.commands.setContent(markdownToEditorHtml(incoming), { emitUpdate: false });
     }, [editor, markdown]);
 
     useImperativeHandle(
@@ -344,6 +348,8 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
         ) : null}
 
         <div className={`px-3 py-3 text-[15px] ${editorClassName}`}>
+          {/* 装飾枠のカードを公開ページに近い見た目で描く */}
+          <style>{PREVIEW_ARTICLE_CSS}</style>
           <EditorContent editor={editor} />
         </div>
       </div>

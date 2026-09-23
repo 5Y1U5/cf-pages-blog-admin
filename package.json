@@ -68,6 +68,7 @@
     "postversion": "git push --follow-tags"
   },
   "dependencies": {
+    "@tiptap/core": "^3.31.3",
     "@tiptap/extension-image": "^3.31.3",
     "@tiptap/pm": "^3.31.3",
     "@tiptap/react": "^3.31.3",
@@ -85,6 +86,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260509.1",
+    "@tiptap/html": "^3.31.3",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/turndown": "^5.0.6",

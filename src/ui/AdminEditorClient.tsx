@@ -33,6 +33,7 @@ import {
   translateUploadError,
 } from "./lib/admin-image.js";
 import { markdownToHtml } from "./lib/admin-markdown.js";
+import { PREVIEW_ARTICLE_CSS } from "./lib/article-preview-css.js";
 import {
   ADMIN_API,
   ADMIN_PATHS,
@@ -162,46 +163,6 @@ function stringifyFaq(value: string): string {
   }
 }
 
-const PREVIEW_ARTICLE_CSS = `
-.admin-article-preview .admin-markdown-preview > *:first-child { margin-top: 0; }
-.admin-article-preview .admin-markdown-preview > *:last-child { margin-bottom: 0; }
-.admin-article-preview h1 { margin: 0 0 18px; font-size: 24px; line-height: 1.35; font-weight: 800; }
-.admin-article-preview h2 { margin: 30px 0 14px; padding-left: 12px; border-left: 4px solid #0f172a; font-size: 22px; line-height: 1.45; font-weight: 800; }
-.admin-article-preview h3 { margin: 24px 0 10px; font-size: 18px; line-height: 1.55; font-weight: 800; }
-.admin-article-preview p { margin: 0 0 16px; line-height: 2; }
-.admin-article-preview ul, .admin-article-preview ol { margin: 0 0 18px; padding-left: 1.5em; line-height: 1.9; }
-.admin-article-preview li + li { margin-top: 6px; }
-.admin-article-preview img { width: 100%; border-radius: 12px; object-fit: cover; }
-.admin-article-preview table { width: 100%; margin: 20px 0 24px; border-collapse: collapse; font-size: 14px; }
-.admin-article-preview th, .admin-article-preview td { padding: 12px 14px; text-align: left; border: 1px solid #dde3ec; vertical-align: top; }
-.admin-article-preview th { background: #f2f6fb; color: #082f60; font-weight: 800; }
-.admin-article-preview blockquote { margin: 22px 0; padding: 16px 18px; border-left: 4px solid #38bdf8; border-radius: 10px; background: #f4f8fb; color: #334155; }
-.admin-article-preview .blog-callout { display: flex; align-items: flex-start; gap: 14px; margin: 26px 0; padding: 18px 20px; background: #f4f8fb; border-left: 4px solid #38bdf8; border-radius: 12px; }
-.admin-article-preview .blog-callout-icon { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; background: rgba(56, 189, 248, .16); color: #075985; }
-.admin-article-preview .blog-callout-icon svg { width: 18px; height: 18px; }
-.admin-article-preview .blog-callout-text { flex: 1; font-size: 14px; line-height: 1.9; }
-.admin-article-preview .blog-callout-text strong { display: block; margin-bottom: 4px; color: #0f172a; }
-.admin-article-preview .blog-points, .admin-article-preview .blog-compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 26px 0; }
-.admin-article-preview .blog-point { padding: 16px 18px; border: 1px solid #dfe6ee; border-radius: 12px; background: #fff; }
-.admin-article-preview .blog-point-label { display: block; margin-bottom: 6px; color: #0369a1; font-size: 11px; font-weight: 800; letter-spacing: .12em; }
-.admin-article-preview .blog-point-text { margin: 0; font-size: 14px; line-height: 1.8; }
-.admin-article-preview .blog-compare-card { padding: 16px 18px; border-radius: 12px; background: #f5f6f8; }
-.admin-article-preview .blog-compare-card.is-after { background: rgba(56, 189, 248, .1); border: 1px solid rgba(56, 189, 248, .35); }
-.admin-article-preview .blog-compare-label { margin-bottom: 6px; font-size: 11px; font-weight: 800; letter-spacing: .12em; color: #64748b; }
-.admin-article-preview .blog-compare-card.is-after .blog-compare-label { color: #0369a1; }
-.admin-article-preview .blog-compare-text { font-size: 14px; line-height: 1.8; }
-.admin-article-preview .blog-stat { margin: 26px 0; padding: 26px 16px; border-radius: 16px; background: #f4f8fb; text-align: center; }
-.admin-article-preview .blog-stat-number { display: block; margin-bottom: 6px; color: #0f172a; font-size: 38px; font-weight: 800; line-height: 1.1; }
-.admin-article-preview .blog-stat-text { font-size: 13px; color: #64748b; }
-.admin-article-preview .blog-faq { margin-top: 38px; padding-top: 28px; border-top: 1px solid #dfe6ee; }
-.admin-article-preview .blog-faq h2 { margin: 0 0 18px; }
-.admin-article-preview .blog-faq details { margin-bottom: 12px; padding: 16px 20px; border: 1px solid #dfe6ee; border-radius: 12px; }
-.admin-article-preview .blog-faq details[open] { border-color: #38bdf8; }
-.admin-article-preview .blog-faq summary { cursor: pointer; font-size: 14px; font-weight: 800; }
-.admin-article-preview .blog-faq details div { margin-top: 10px; font-size: 14px; line-height: 1.9; color: #475569; }
-@media (max-width: 640px) { .admin-article-preview .blog-points, .admin-article-preview .blog-compare { grid-template-columns: 1fr; } }
-`;
-
 function statusLabel(status: string): string {
   const labels: Record<string, string> = {
     draft: "下書き",
@@ -288,6 +249,9 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [message, setMessage] = useState(initialId ? "読み込み中..." : "");
   const [isLoading, setIsLoading] = useState(Boolean(initialId));
+  // 既存記事の読み込みに失敗したら、保存・公開を止める。
+  // 失敗したまま保存すると、画面に出ている空の本文で記事を上書きしてしまうため。
+  const [loadFailed, setLoadFailed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isUnpublishing, setIsUnpublishing] = useState(false);
@@ -313,7 +277,9 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
   const [heroImageAlt, setHeroImageAlt] = useState("");
   const [author, setAuthor] = useState(config.defaultAuthor);
   const [authorRole, setAuthorRole] = useState("");
-  const [bodyMarkdown, setBodyMarkdown] = useState(emptyBody);
+  // ひな形は新規記事だけに入れる。既存記事を開いたときに入れると、読み込みが終わるまで
+  // ひな形が本文として見え、「本文が消えた」と受け取られる。
+  const [bodyMarkdown, setBodyMarkdown] = useState(initialId ? "" : emptyBody);
   const [ogDescription, setOgDescription] = useState("");
   const [tagsText, setTagsText] = useState("");
   const [faqText, setFaqText] = useState("");
@@ -409,7 +375,8 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
     setHeroImageAlt(post.hero_image_alt || "");
     setAuthor(post.author || config.defaultAuthor);
     setAuthorRole(post.author_role || "");
-    setBodyMarkdown(post.body_markdown || emptyBody);
+    // 既存記事の本文が空でもひな形は差し込まない（ひな形のまま保存・公開されるのを防ぐ）
+    setBodyMarkdown(post.body_markdown ?? "");
     setOgDescription(post.og_description || "");
     setTagsText(stringifyJsonArray(post.tags_json));
     setFaqText(stringifyFaq(post.faq_json));
@@ -434,20 +401,38 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
   }
 
   async function loadPost(id: string) {
-    const res = await fetch(postApi(id), { cache: "no-store" });
+    let res: Response;
+    try {
+      res = await fetch(postApi(id), { cache: "no-store" });
+    } catch {
+      setMessage("記事を取得できませんでした。");
+      setLoadFailed(true);
+      setIsLoading(false);
+      return;
+    }
     if (res.status === 401) {
       location.href = ADMIN_PATHS.login;
       return;
     }
-    if (!res.ok) {
+    const data = res.ok ? ((await res.json().catch(() => null)) as { post?: AdminPost } | null) : null;
+    if (!data?.post) {
       setMessage("記事を取得できませんでした。");
+      setLoadFailed(true);
       setIsLoading(false);
       return;
     }
-    const data = (await res.json()) as { post?: AdminPost };
-    if (data.post) applyPost(data.post);
+    applyPost(data.post);
+    setLoadFailed(false);
     setMessage("");
     setIsLoading(false);
+  }
+
+  function retryLoadPost() {
+    if (!initialId) return;
+    setLoadFailed(false);
+    setIsLoading(true);
+    setMessage("読み込み中...");
+    void loadPost(initialId);
   }
 
   useEffect(() => {
@@ -499,6 +484,8 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
       setMessage(VIEWER_BLOCKED.save);
       return null;
     }
+    // 読み込みが終わっていない・失敗した記事は保存しない（画面の本文は記事の中身ではない）
+    if (isLoading || loadFailed) return null;
     setIsSaving(true);
     setMessage("");
     const payload = buildPayload(nextStatus);
@@ -809,7 +796,7 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
             <button
               type="button"
               onClick={() => void save("draft")}
-              disabled={!canEdit || isSaving || isLoading || isUnpublishing}
+              disabled={!canEdit || isSaving || isLoading || loadFailed || isUnpublishing}
               title={canEdit ? "下書きを保存する" : VIEWER_NOTICE}
               className="flex h-10 items-center gap-2 rounded-lg border border-border px-4 text-[13px] font-bold disabled:opacity-50"
             >
@@ -840,7 +827,15 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
             <button
               type="button"
               onClick={() => void publish()}
-              disabled={!canEdit || !canPublish || isPublishing || isSaving || isUnpublishing}
+              disabled={
+                !canEdit ||
+                !canPublish ||
+                isLoading ||
+                loadFailed ||
+                isPublishing ||
+                isSaving ||
+                isUnpublishing
+              }
               title={publishButtonTitle(canEdit, canPublish, missingFields)}
               className="flex h-10 items-center gap-2 rounded-lg bg-foreground px-4 text-[13px] font-bold text-background disabled:opacity-40"
             >
@@ -924,7 +919,28 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
                     {editorMode === "rich" ? "マークダウンで編集" : "通常の編集に戻す"}
                   </button>
                 </div>
-                {editorMode === "rich" ? (
+                {isLoading || loadFailed ? (
+                  // 読み込みが終わるまで本文欄は出さない（ひな形や空欄を本文と見間違えないため）
+                  <div className="mt-2 flex min-h-[460px] flex-col items-center justify-center gap-3 rounded-lg border border-border bg-muted px-3 py-3 text-[13px] font-normal text-foreground/55">
+                    {loadFailed ? (
+                      <>
+                        <span>記事を取得できませんでした。保存はできません。</span>
+                        <button
+                          type="button"
+                          onClick={retryLoadPost}
+                          className="h-9 rounded-md border border-border bg-background px-3 text-[12px] font-bold text-foreground"
+                        >
+                          もう一度読み込む
+                        </button>
+                      </>
+                    ) : (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="animate-spin" size={16} />
+                        記事を読み込んでいます…
+                      </span>
+                    )}
+                  </div>
+                ) : editorMode === "rich" ? (
                   <RichTextEditor
                     ref={richEditorRef}
                     markdown={bodyMarkdown}
@@ -1328,7 +1344,7 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
           <button
             type="button"
             onClick={() => void save("draft")}
-            disabled={!canEdit || isSaving || isLoading || isUnpublishing}
+            disabled={!canEdit || isSaving || isLoading || loadFailed || isUnpublishing}
             title={canEdit ? undefined : VIEWER_NOTICE}
             className="flex h-12 items-center justify-center gap-2 rounded-lg border border-border text-[14px] font-bold disabled:opacity-50"
           >
@@ -1354,7 +1370,15 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
           <button
             type="button"
             onClick={() => void publish()}
-            disabled={!canEdit || !canPublish || isPublishing || isSaving || isUnpublishing}
+            disabled={
+                !canEdit ||
+                !canPublish ||
+                isLoading ||
+                loadFailed ||
+                isPublishing ||
+                isSaving ||
+                isUnpublishing
+              }
             title={publishButtonTitle(canEdit, canPublish, missingFields)}
             className="flex h-12 items-center justify-center gap-2 rounded-lg bg-foreground text-[14px] font-bold text-background disabled:opacity-40"
           >

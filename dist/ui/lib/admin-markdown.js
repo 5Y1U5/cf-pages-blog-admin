@@ -3,6 +3,11 @@
 // 記事の保存形式はマークダウンのまま。編集中だけ HTML として扱い、保存時にマークダウンへ戻すため、
 // 公開パイプライン（server/_shared/posts.ts）は変換の有無に影響されない。
 import { Marked } from "marked";
+import { splitArticleContent } from "../../content/article-blocks.js";
+/** 見たまま編集の HTML の中で、装飾枠を表す要素の目印（ArticleBlock と共有）。 */
+export const ARTICLE_BLOCK_ATTR = "data-article-block";
+/** 枠の原文を入れる属性。改行や記号をそのまま運ぶため encodeURIComponent した値を入れる。 */
+export const ARTICLE_BLOCK_SOURCE_ATTR = "data-source";
 // turndown と turndown-plugin-gfm は CommonJS で、DOM も要る。
 // モジュールの先頭で import すると、サーバー側で管理画面を描画する構成
 // （Workers 上の SSR など）で読み込みごと失敗する。ブラウザで初めて必要になった時点で読む。
@@ -33,6 +38,22 @@ async function buildTurndown() {
     });
     // テーブル・打ち消し線を維持する（GFM 側が解釈できる形で出力される）
     service.use(gfm);
+    // 装飾枠（見たまま編集の ArticleBlock）は、属性に持たせた原文をそのまま戻す。
+    // 中身の文字（renderHTML が入れた原文）は使わない。エスケープされて記号が変わるため。
+    service.addRule("articleBlock", {
+        filter: (node) => node.nodeName === "DIV" && node.hasAttribute(ARTICLE_BLOCK_ATTR),
+        replacement: (_content, node) => {
+            const encoded = node.getAttribute(ARTICLE_BLOCK_SOURCE_ATTR) || "";
+            let source = "";
+            try {
+                source = decodeURIComponent(encoded);
+            }
+            catch {
+                source = "";
+            }
+            return source ? `\n\n${source}\n\n` : "";
+        },
+    });
     // turndown の既定は "-   項目"（記号のあと空白3つ）。一般的な記事は "- 項目" なので、
     // 1行直しただけでリスト全行に差分が出ないよう既存の書き方へ揃える。
     // 継続行のインデントは接頭辞と同じ幅にする（"1. " なら3つ）。ここを固定幅にすると
@@ -121,6 +142,45 @@ export function markdownToHtml(markdown) {
     if (!markdown.trim())
         return "";
     return previewMarked.parse(markdown, { async: false });
+}
+/** 記事全体で集めた参照リンクの定義を使って、本文の一部を HTML にする。 */
+function markdownToHtmlWithLinks(markdown, links) {
+    if (!markdown.trim())
+        return "";
+    const lexer = new previewMarked.Lexer(previewMarked.defaults);
+    Object.assign(lexer.tokens.links, links);
+    return previewMarked.parser(lexer.lex(markdown));
+}
+/** 装飾枠を記法どおりの原文に組み直す（開始行・中身・閉じ行）。 */
+export function articleBlockSource(block) {
+    const open = block.arg ? `:::${block.name} ${block.arg}` : `:::${block.name}`;
+    return [open, ...block.lines, ":::"].join("\n");
+}
+function escapeText(value) {
+    return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+/**
+ * 見たまま編集に渡す HTML を作る。
+ *
+ * markdownToHtml と違い、装飾枠（`:::callout` など）を段落にせず、原文を持った塊の要素にする。
+ * 見たまま編集はこの要素を ArticleBlock として読み、保存時は htmlToMarkdown が原文へ戻す。
+ * 閉じ忘れの枠は splitArticleContent が通常の Markdown として返すので、今までどおり段落になる。
+ */
+export function markdownToEditorHtml(markdown) {
+    if (!markdown.trim())
+        return "";
+    // 参照形式のリンク・画像（`[資料][ref]` と、別の場所に書いた `[ref]: URL`）は、
+    // 枠の前後で本文が分かれても解決できるよう、記事全体の定義を先に集めて各部分に渡す。
+    const links = previewMarked.lexer(markdown).links;
+    return splitArticleContent(markdown)
+        .map((segment) => {
+        if (segment.kind === "markdown")
+            return markdownToHtmlWithLinks(segment.text, links);
+        const source = articleBlockSource(segment);
+        return (`<div ${ARTICLE_BLOCK_ATTR}="" ${ARTICLE_BLOCK_SOURCE_ATTR}="${encodeURIComponent(source)}">` +
+            `${escapeText(source)}</div>`);
+    })
+        .join("\n");
 }
 /**
  * turndown を先に読み込んでおく。編集画面の表示時に呼んでおくと、

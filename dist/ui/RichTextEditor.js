@@ -8,7 +8,9 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import { Bold, Heading2, Heading3, ImagePlus, Italic, Link2, Link2Off, List, ListOrdered, Minus, Quote, Redo2, Undo2, } from "lucide-react";
-import { htmlToMarkdown, markdownToHtml, normalizeMarkdown, preloadMarkdownConverter, } from "./lib/admin-markdown.js";
+import { htmlToMarkdown, markdownToEditorHtml, normalizeMarkdown, preloadMarkdownConverter, } from "./lib/admin-markdown.js";
+import { ArticleBlock } from "./lib/article-block-node.js";
+import { PREVIEW_ARTICLE_CSS } from "./lib/article-preview-css.js";
 const editorClassName = [
     "[&_.tiptap]:min-h-[460px] [&_.tiptap]:outline-none",
     "[&_.tiptap_h2]:mt-7 [&_.tiptap_h2]:text-[22px] [&_.tiptap_h2]:font-bold [&_.tiptap_h2]:leading-tight",
@@ -62,8 +64,10 @@ export const RichTextEditor = forwardRef(function RichTextEditor({ markdown, onC
                 },
             }),
             Image.configure({ inline: false, allowBase64: false }),
+            // 装飾枠（:::callout など）を崩さずに持つ塊
+            ArticleBlock,
         ],
-        content: markdownToHtml(markdown),
+        content: markdownToEditorHtml(markdown),
         editorProps: {
             attributes: {
                 class: "tiptap",
@@ -95,7 +99,7 @@ export const RichTextEditor = forwardRef(function RichTextEditor({ markdown, onC
         if (incoming === lastEmitted.current)
             return;
         lastEmitted.current = incoming;
-        editor.commands.setContent(markdownToHtml(incoming), { emitUpdate: false });
+        editor.commands.setContent(markdownToEditorHtml(incoming), { emitUpdate: false });
     }, [editor, markdown]);
     useImperativeHandle(ref, () => ({
         insertImage(src, alt) {
@@ -131,5 +135,5 @@ export const RichTextEditor = forwardRef(function RichTextEditor({ markdown, onC
                             }
                             if (event.key === "Escape")
                                 setLinkOpen(false);
-                        }, autoFocus: true, placeholder: "https://example.com/", className: "h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-[14px] outline-none focus:border-foreground" }), _jsx("button", { type: "button", onClick: applyLink, className: "h-9 rounded-md bg-foreground px-3 text-[12px] font-bold text-background", children: "\u30EA\u30F3\u30AF\u3092\u8A2D\u5B9A" }), _jsx("button", { type: "button", onClick: () => setLinkOpen(false), className: "h-9 rounded-md border border-border px-3 text-[12px] font-bold", children: "\u3084\u3081\u308B" })] })) : null, _jsx("div", { className: `px-3 py-3 text-[15px] ${editorClassName}`, children: _jsx(EditorContent, { editor: editor }) })] }));
+                        }, autoFocus: true, placeholder: "https://example.com/", className: "h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-[14px] outline-none focus:border-foreground" }), _jsx("button", { type: "button", onClick: applyLink, className: "h-9 rounded-md bg-foreground px-3 text-[12px] font-bold text-background", children: "\u30EA\u30F3\u30AF\u3092\u8A2D\u5B9A" }), _jsx("button", { type: "button", onClick: () => setLinkOpen(false), className: "h-9 rounded-md border border-border px-3 text-[12px] font-bold", children: "\u3084\u3081\u308B" })] })) : null, _jsxs("div", { className: `px-3 py-3 text-[15px] ${editorClassName}`, children: [_jsx("style", { children: PREVIEW_ARTICLE_CSS }), _jsx(EditorContent, { editor: editor })] })] }));
 });

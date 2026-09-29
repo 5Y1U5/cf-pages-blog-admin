@@ -18,6 +18,7 @@ Cloudflare Pages + D1 + R2 で動く、日本語向けのブログ管理画面�
 - 画像アップロード（ブラウザ側でリサイズ、マジックナンバー検査、R2 から配信）
 - カテゴリ管理（管理画面から追加・改名・削除。`content/blog-categories.json` へ書き戻す）
 - slug（URL の末尾）の変更。公開済みの記事は旧 URL から新 URL へ 301 で転送する
+- 予約公開（公開日を先の日付にすると、その日の0時から公開ページに出る。設定で有効にしたサイトだけ）
 
 ## 前提
 
@@ -190,6 +191,7 @@ CSS のひな形は `docs/article-blocks.css`。色の変数3つを差し替え�
 | `publish.requiredFields` | `["title","body"]` | 公開に必須の項目 |
 | `publish.timezoneOffsetMinutes` | `540` | 公開日の基準タイムゾーン（分） |
 | `publish.blockFutureDate` | `true` | 未来日での公開を拒否するか |
+| `publish.scheduledPublish` | `false` | 予約公開を使うか。`true` にすると未来日の公開を「予約」として受け付ける（`blockFutureDate` より優先）。公開側の対応が要る（下の「予約公開」） |
 | `publish.publicPathPrefix` | `"/blog"` | 公開 URL の接頭辞。**サイトの実際の記事 URL に合わせる** |
 | `github.owner` / `repo` / `branch` | `""` / `""` / `"main"` | 公開先。環境変数が設定されていればそちらが優先される |
 | `github.mode` | `"source"` | `"source"`＝コミットが記事の実体。失敗したら公開しない。`"backup"`＝実体は D1。失敗しても公開は成立し `warning` を返す |
@@ -363,6 +365,38 @@ fetch の先頭で呼び、返ってきたパスへ `Response.redirect(..., 301)
 
 転送表が無いサイト（0008 未適用）でも slug の変更は通る。保存の応答に `warning` が付き、転送だけ効かない。
 記事を削除すると、その記事の転送も消える。
+予約公開を使うサイトでは、公開日がまだ来ていない記事へは転送しない。
+旧 URL で別の記事を予約したときは、公開日が来るまで元の記事への転送を続ける（予約を取り消しても転送は残る）。
+
+### 予約公開（`publish.scheduledPublish`）
+
+`publish.scheduledPublish: true` のサイトでは、公開日を先の日付にすると編集画面の「公開」が「予約」に変わる。
+押すと記事は公開済み（`status = 'published'`）になり、公開日の0時（`timezoneOffsetMinutes` の時刻）から
+公開ページに出る扱いになる。予約中の記事は一覧の「予約中」タブと、編集画面の見出しの下に出る。
+「予約取消」（公開取り下げと同じ処理）で下書きに戻る。予約中の記事を保存すると下書きに戻り（一覧も「下書き」に移る）、
+予約日にも出なくなるので、もう一度「予約」を押す。
+
+時刻は指定できない（日単位）。D1 に列を足さずに `date` 列だけで判定しているため、migration は要らない。
+
+**公開側が日付で絞らないと、予約した記事がすぐ出てしまう。** 有効にしてよいのは、公開ページが記事を
+毎回 D1 から読むサイトだけ。静的に書き出すサイト（ビルドした時点の状態で固まる）は有効にしない。
+公開側は一覧・個別ページ・カテゴリの件数・サイトマップなど、記事を読むすべての箇所で
+公開日が今日以前のものだけに絞る。今日は管理画面と同じ `todayInConfiguredZone` で出す。
+
+```ts
+import { todayInConfiguredZone } from "@5y1u5/cf-pages-blog-admin/config";
+
+const today = todayInConfiguredZone(blogAdminConfig); // 例 "2026-10-01"（日本時間）
+await db
+  .prepare(
+    `SELECT ... FROM post_drafts
+     WHERE client_id = ? AND status = 'published' AND substr(date, 1, 10) <= ?`
+  )
+  .bind(clientId, today)
+  .all();
+```
+
+公開ページや一覧にキャッシュを付けているサイトは、その時間だけ公開が遅れる。
 
 ## パスワードの扱い（設計上の性質）
 

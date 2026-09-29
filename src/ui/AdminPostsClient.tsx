@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { FileText, KeyRound, Plus, RefreshCw, Tags, Trash2, UsersRound } from "lucide-react";
 
 import type { AdminRole, BlogAdminConfig } from "../config/index.js";
-import { canEditContent, publicPostUrl } from "../config/index.js";
+import {
+  canEditContent,
+  isScheduledPost,
+  publicPostUrl,
+  todayInConfiguredZone,
+} from "../config/index.js";
 import { AdminLogoutButton } from "./AdminLogoutButton.js";
 import { AdminPasswordPanel } from "./AdminPasswordPanel.js";
 import { ADMIN_API, ADMIN_PATHS, editorPath, postApi } from "./paths.js";
@@ -22,7 +27,7 @@ interface AdminPostListItem {
   published_url?: string | null;
 }
 
-type PostTab = "published" | "draft";
+type PostTab = "published" | "scheduled" | "draft";
 
 const PUBLIC_STATUSES = new Set(["published", "publishing"]);
 const LOAD_ERROR_MESSAGE = "記事一覧を取得できませんでした。時間をおいて再度お試しください。";
@@ -42,7 +47,16 @@ function statusLabel(status: string): string {
   return labels[status] || "編集中";
 }
 
-function tabForPost(post: AdminPostListItem): PostTab {
+function tabForPost(config: BlogAdminConfig, post: AdminPostListItem): PostTab {
+  if (isScheduledPost(config, post)) return "scheduled";
+  // 予約中に保存して下書きに戻った記事は、published_url が残っていても公開日に出ない
+  if (
+    config.publish.scheduledPublish &&
+    !PUBLIC_STATUSES.has(post.status) &&
+    String(post.date || "").slice(0, 10) > todayInConfiguredZone(config)
+  ) {
+    return "draft";
+  }
   return PUBLIC_STATUSES.has(post.status) || Boolean(post.published_url)
     ? "published"
     : "draft";
@@ -74,18 +88,23 @@ export function AdminPostsClient({ config, router, headerActions }: AdminPostsCl
   const canEdit = canEditContent(role);
   const canDelete = role !== null && config.permissions.deletePost.includes(role);
 
-  const counts = useMemo(
-    () => ({
-      published: posts.filter((post) => tabForPost(post) === "published").length,
-      draft: posts.filter((post) => tabForPost(post) === "draft").length,
-    }),
-    [posts]
-  );
+  // 予約中かどうかは現在時刻で変わるので、件数と一覧は描くたびに同じ時刻で数え直す
+  // （片方だけ覚えておくと、0時をまたいだときに件数と中身が食い違う）
+  const counts = {
+    published: posts.filter((post) => tabForPost(config, post) === "published").length,
+    scheduled: posts.filter((post) => tabForPost(config, post) === "scheduled").length,
+    draft: posts.filter((post) => tabForPost(config, post) === "draft").length,
+  };
+  const visiblePosts = posts.filter((post) => tabForPost(config, post) === activeTab);
 
-  const visiblePosts = useMemo(
-    () => posts.filter((post) => tabForPost(post) === activeTab),
-    [activeTab, posts]
-  );
+  // 予約公開を使うサイトだけ「予約中」のタブを出す
+  const tabs = [
+    { value: "published" as const, label: "公開中", count: counts.published },
+    ...(config.publish.scheduledPublish
+      ? [{ value: "scheduled" as const, label: "予約中", count: counts.scheduled }]
+      : []),
+    { value: "draft" as const, label: "下書き", count: counts.draft },
+  ];
 
   async function load() {
     const res = await fetch(ADMIN_API.posts, { cache: "no-store" });
@@ -118,12 +137,18 @@ export function AdminPostsClient({ config, router, headerActions }: AdminPostsCl
   }
 
   async function deletePost(post: AdminPostListItem) {
-    const isPublic = tabForPost(post) === "published";
+    const tab = tabForPost(config, post);
+    const isPublic = tab === "published";
+    const stateText = isPublic
+      ? "公開中"
+      : tab === "scheduled"
+        ? `予約中（${post.date} に公開予定・まだ公開されていません）`
+        : "下書き（未公開）";
     const lines = [
       "記事を削除します。",
       "",
       `　タイトル：${post.title || "（無題）"}`,
-      `　状態：${isPublic ? "公開中" : "下書き（未公開）"}`,
+      `　状態：${stateText}`,
       "",
       isPublic
         ? `この記事はいま公開されています。削除すると、サイトから記事ページごと消えます。\n記事の URL（${
@@ -267,11 +292,14 @@ export function AdminPostsClient({ config, router, headerActions }: AdminPostsCl
           </p>
         ) : null}
 
-        <div className="mt-6 grid grid-cols-2 rounded-lg border border-border bg-background p-1">
-          {[
-            { value: "published" as const, label: "公開中", count: counts.published },
-            { value: "draft" as const, label: "下書き", count: counts.draft },
-          ].map((tab) => {
+        <div
+          className={
+            tabs.length === 3
+              ? "mt-6 grid grid-cols-3 rounded-lg border border-border bg-background p-1"
+              : "mt-6 grid grid-cols-2 rounded-lg border border-border bg-background p-1"
+          }
+        >
+          {tabs.map((tab) => {
             const isActive = activeTab === tab.value;
             return (
               <button
@@ -296,7 +324,9 @@ export function AdminPostsClient({ config, router, headerActions }: AdminPostsCl
             <p className="rounded-lg border border-border bg-background p-4 text-[13px] text-foreground/60">
               {activeTab === "published"
                 ? "公開中の記事はありません。"
-                : "下書きの記事はありません。"}
+                : activeTab === "scheduled"
+                  ? "予約中の記事はありません。"
+                  : "下書きの記事はありません。"}
             </p>
           ) : null}
           {visiblePosts.map((post) => (
@@ -316,7 +346,9 @@ export function AdminPostsClient({ config, router, headerActions }: AdminPostsCl
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-bold">
-                      {statusLabel(post.status)}
+                      {isScheduledPost(config, post)
+                        ? `予約中（${post.date} に公開）`
+                        : statusLabel(post.status)}
                     </span>
                     <span className="rounded-full bg-muted px-2.5 py-1 text-[11px]">
                       最終更新: {new Date(post.updated_at).toLocaleString("ja-JP")}

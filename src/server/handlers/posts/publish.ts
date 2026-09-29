@@ -2,6 +2,7 @@ import {
   postFilePath,
   publicPostUrl,
   resolveDefaultCategory,
+  todayInConfiguredZone,
   type BlogAdminConfig,
   type PublishRequirement,
 } from "../../../config/index.js";
@@ -54,12 +55,6 @@ function missingRequirements(
   required: PublishRequirement[]
 ): PublishRequirement[] {
   return required.filter((field) => !hasRequirement(post, field));
-}
-
-/** 設定のタイムゾーンで見た「今日」（YYYY-MM-DD）。 */
-function todayInConfiguredZone(config: BlogAdminConfig): string {
-  const offsetMs = config.publish.timezoneOffsetMinutes * 60 * 1000;
-  return new Date(Date.now() + offsetMs).toISOString().slice(0, 10);
 }
 
 /**
@@ -129,10 +124,13 @@ export function createPublishHandlers(config: BlogAdminConfig) {
 
     const today = todayInConfiguredZone(config);
     const date = post.date || today;
-    // 予約公開（指定日に自動公開）は未対応：静的サイトを定期再ビルドする仕組みが無い構成では、
+    // 予約公開（scheduledPublish）を使うサイトでは、未来日の公開は「予約」として受け付ける。
+    // 公開側がその日まで記事を出さない（todayInConfiguredZone で絞る）前提。
+    const scheduled = config.publish.scheduledPublish && date.slice(0, 10) > today;
+    // 予約公開を使わないサイト：静的サイトを定期再ビルドする仕組みが無い構成では、
     // 未来日付で公開すると公開側の date<=today フィルタで除外され、再ビルドされるまで
     // 「公開成功なのに表示されない」状態になる。サイレント失敗を防ぐためブロックする。
-    if (config.publish.blockFutureDate && date > today) {
+    if (!config.publish.scheduledPublish && config.publish.blockFutureDate && date > today) {
       return badRequest(
         `公開日「${date}」が未来の日付です。予約公開（指定日に自動で公開）は未対応のため、` +
           `本日（${today}）以前の日付にするか、下書きのままにしてください。`
@@ -243,13 +241,17 @@ export function createPublishHandlers(config: BlogAdminConfig) {
     // この URL を「変更前の URL」として持つ転送が残っていれば消す。
     // 別の記事が昔使っていた URL で新しい記事を公開したとき、新しい記事が古い記事へ 301 で
     // 飛んでしまうのを防ぐ。転送表が無いサイト（migration 0008 未適用）では飛ばす。
-    try {
-      await db
-        .prepare("DELETE FROM post_redirects WHERE client_id = ? AND from_path = ? AND post_id <> ?")
-        .bind(user.client_id, publishedUrl, post.id)
-        .run();
-    } catch {
-      // 表が無いだけなので何もしない
+    // 予約のときは消さない。公開日までは旧 URL から古い記事へ送り続け、予約を取り消しても転送が残る
+    // （公開日が来れば resolvePostRedirect がこの記事を優先するので、転送は効かなくなる）。
+    if (!scheduled) {
+      try {
+        await db
+          .prepare("DELETE FROM post_redirects WHERE client_id = ? AND from_path = ? AND post_id <> ?")
+          .bind(user.client_id, publishedUrl, post.id)
+          .run();
+      } catch {
+        // 表が無いだけなので何もしない
+      }
     }
     await db
       .prepare(
@@ -277,7 +279,7 @@ export function createPublishHandlers(config: BlogAdminConfig) {
       action: "post.publish",
       targetType: "post",
       targetId: post.id,
-      summary: effectivePost.title,
+      summary: scheduled ? `${effectivePost.title}（${date} に予約）` : effectivePost.title,
     });
 
     return json({

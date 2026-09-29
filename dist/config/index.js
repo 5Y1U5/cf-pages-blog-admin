@@ -39,6 +39,7 @@ const DEFAULT_PUBLISH = {
     requiredFields: ["title", "body"],
     timezoneOffsetMinutes: 540,
     blockFutureDate: true,
+    scheduledPublish: false,
     publicPathPrefix: "/blog",
 };
 const DEFAULT_GITHUB = {
@@ -113,6 +114,25 @@ export function resolveDefaultCategory(config, categories) {
             return preferred;
     }
     return bySlug(config.category.defaultSlug) ?? categories[0] ?? null;
+}
+/**
+ * 設定のタイムゾーンで見た「今日」（YYYY-MM-DD）。
+ * 公開処理の未来日の判定と、予約公開を使うサイトの公開側（今日以前の記事だけ出す）で同じものを使う。
+ */
+export function todayInConfiguredZone(config, now = Date.now()) {
+    const offsetMs = config.publish.timezoneOffsetMinutes * 60 * 1000;
+    return new Date(now + offsetMs).toISOString().slice(0, 10);
+}
+/**
+ * 予約中の記事か（公開の操作は済んでいるが、公開日がまだ来ていない）。
+ * 予約公開を使っていないサイトでは常に false。公開日は先頭10文字（YYYY-MM-DD）で比べる。
+ */
+export function isScheduledPost(config, post, now = Date.now()) {
+    if (!config.publish.scheduledPublish)
+        return false;
+    if (post.status !== "published" && post.status !== "publishing")
+        return false;
+    return String(post.date || "").slice(0, 10) > todayInConfiguredZone(config, now);
 }
 /** 記事ファイルのパスを組み立てる（`postsDir/<slug>.md`）。 */
 export function postFilePath(config, slug) {

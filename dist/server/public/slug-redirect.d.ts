@@ -1,4 +1,4 @@
-import type { BlogAdminConfig } from "../../config/index.js";
+import { type BlogAdminConfig } from "../../config/index.js";
 import type { BlogAdminEnv } from "../../config/env.js";
 /**
  * pathname が旧 URL なら、いまの公開パス（例 `/blog/new-slug`）を返す。該当しなければ null。
@@ -11,6 +11,10 @@ import type { BlogAdminEnv } from "../../config/env.js";
  *
  * 旧 URL を別の記事がいま使っている（同じパスを `published_url` に持つ記事がある）ときは転送しない。
  * その URL は生きているので、そのまま次へ流す。
+ *
+ * 予約公開（`publish.scheduledPublish`）を使うサイトでは、公開日がまだ来ていない記事へも送らない
+ * （行き先はまだ出ていないので 404 になり、公開前の URL も知られてしまう）。
+ * 旧 URL で別の記事を予約したときも、公開日が来るまではその記事を「いま使っている」とみなさず、転送を続ける。
  */
 export declare function resolvePostRedirect(db: D1Database, config: BlogAdminConfig, pathname: string): Promise<string | null>;
 /**

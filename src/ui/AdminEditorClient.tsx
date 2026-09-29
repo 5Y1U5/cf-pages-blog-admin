@@ -20,8 +20,10 @@ import { renderArticleBlock, splitArticleContent } from "../content/article-bloc
 import {
   canEditContent,
   clientPublishRequirements,
+  isScheduledPost,
   publicPostUrl,
   resolveDefaultCategory,
+  todayInConfiguredZone,
 } from "../config/index.js";
 import { AdminLogoutButton } from "./AdminLogoutButton.js";
 import { AdminPasswordPanel } from "./AdminPasswordPanel.js";
@@ -285,6 +287,9 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
   const [tagsText, setTagsText] = useState("");
   const [faqText, setFaqText] = useState("");
   const [status, setStatus] = useState("draft");
+  // 最後に読み込んだ・公開した時点の公開日。予約中かどうかは欄の値ではなくこちらで見る
+  // （欄を書き換えただけで「予約中」と出ないように）。
+  const [savedDate, setSavedDate] = useState("");
   const [publishedUrl, setPublishedUrl] = useState("");
   const [newCategorySlug, setNewCategorySlug] = useState("");
   const [newCategoryLabel, setNewCategoryLabel] = useState("");
@@ -327,6 +332,12 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
     (entry) => entry.location === "advanced"
   );
   const canUnpublish = status === "published" || Boolean(publishedUrl);
+  // 予約公開を使うサイトで、公開日が先の日付なら「公開」ではなく「予約」になる
+  const willSchedule =
+    config.publish.scheduledPublish && date.slice(0, 10) > todayInConfiguredZone(config);
+  const isScheduled = isScheduledPost(config, { status, date: savedDate });
+  const publishLabel = willSchedule ? "予約" : "公開";
+  const unpublishLabel = isScheduled ? "予約取消" : "取り下げ";
 
   // マークダウン表示に切り替えた人は次回もその状態で開く。
   useEffect(() => {
@@ -368,6 +379,7 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
     setSlug(post.slug || "");
     setSavedSlug(post.slug || "");
     setDate(post.date || today());
+    setSavedDate(post.date || "");
     setCategorySlug(post.category_slug || "");
     if (postTypes.length) setPostType(post.post_type || postTypes[0]?.value || "");
     setCategoryLabel(post.category_label || "");
@@ -546,8 +558,14 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
     }
     const savedId = await save("approved");
     if (!savedId) return;
+    // 押した時点の今日と公開日で「予約」か「公開」かを決め直す。画面を開いたまま0時をまたぐと
+    // 描画済みの判定は古い。応答を待つ間に欄が変わっても揺れないよう、ここで固定する
+    const scheduledDate =
+      config.publish.scheduledPublish && date.slice(0, 10) > todayInConfiguredZone(config)
+        ? date
+        : "";
     setIsPublishing(true);
-    setMessage("公開処理を開始しています...");
+    setMessage(scheduledDate ? "予約を受け付けています..." : "公開処理を開始しています...");
     const res = await fetch(`${postApi(savedId)}/publish`, { method: "POST" });
     const data = (await res.json().catch(() => ({}))) as unknown;
     setIsPublishing(false);
@@ -563,11 +581,17 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
       return;
     }
     setStatus("publishing");
+    setSavedDate(date);
     // 公開 URL はサーバーが返す publishedUrl を優先する。新規記事で slug がサーバー側で
     // 連番化された場合、setState は非同期なのでクライアントの slug は古く、
     // 組み立て直すと実際の公開先とずれる。
     setPublishedUrl(readPublishedUrl(data) ?? publicPostUrl(config, slug));
     const publishWarning = readWarning(data);
+    if (scheduledDate) {
+      const scheduledMessage = `予約しました。${scheduledDate} の0時に公開されます。取り消すときは「予約取消」を押してください。`;
+      setMessage(publishWarning ? `${scheduledMessage}ただし ${publishWarning}` : scheduledMessage);
+      return;
+    }
     setMessage(
       publishWarning
         ? `公開しました。ただし ${publishWarning}`
@@ -581,8 +605,10 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
       setMessage(VIEWER_BLOCKED.unpublish);
       return;
     }
+    // 予約中の記事を取り下げるのは「予約の取り消し」。押した時点の今日で決め直す
+    const wasScheduled = isScheduledPost(config, { status, date: savedDate });
     setIsUnpublishing(true);
-    setMessage("公開取り下げを開始しています...");
+    setMessage(wasScheduled ? "予約を取り消しています..." : "公開取り下げを開始しています...");
     const res = await fetch(`${postApi(postId)}/unpublish`, { method: "POST" });
     const data = (await res.json().catch(() => ({}))) as unknown;
     setIsUnpublishing(false);
@@ -604,6 +630,11 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
     setStatus("draft");
     setPublishedUrl("");
     const unpublishWarning = readWarning(data);
+    if (wasScheduled) {
+      const cancelMessage = "予約を取り消しました。記事は下書きに戻り、公開されません。";
+      setMessage(unpublishWarning ? `${cancelMessage}ただし ${unpublishWarning}` : cancelMessage);
+      return;
+    }
     setMessage(
       unpublishWarning
         ? `公開を取り下げました。ただし ${unpublishWarning}`
@@ -775,7 +806,11 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
     setMessage("カテゴリを削除しました。");
   }
 
-  const headerStatus = isLoading ? "読み込み中" : statusLabel(status);
+  const headerStatus = isLoading
+    ? "読み込み中"
+    : isScheduled
+      ? `予約中（${savedDate} に公開）`
+      : statusLabel(status);
 
   return (
     <main className="min-h-screen bg-[rgb(247,247,247)] pb-28">
@@ -809,7 +844,13 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
                 type="button"
                 onClick={() => void unpublish()}
                 disabled={!canEdit || isUnpublishing || isPublishing || isSaving}
-                title={canEdit ? "公開を取り下げる" : VIEWER_NOTICE}
+                title={
+                  canEdit
+                    ? isScheduled
+                      ? "予約を取り消して下書きに戻す"
+                      : "公開を取り下げる"
+                    : VIEWER_NOTICE
+                }
                 className="flex h-10 items-center gap-2 rounded-lg border border-border px-4 text-[13px] font-bold text-foreground/75 disabled:opacity-50"
               >
                 {isUnpublishing ? (
@@ -817,7 +858,7 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
                 ) : (
                   <EyeOff size={16} />
                 )}
-                取り下げ
+                {unpublishLabel}
               </button>
             )}
             {canEdit && !canPublish && missingFields.length > 0 && (
@@ -837,11 +878,11 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
                 isSaving ||
                 isUnpublishing
               }
-              title={publishButtonTitle(canEdit, canPublish, missingFields)}
+              title={publishButtonTitle(canEdit, canPublish, missingFields, willSchedule)}
               className="flex h-10 items-center gap-2 rounded-lg bg-foreground px-4 text-[13px] font-bold text-background disabled:opacity-40"
             >
               {isPublishing ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
-              公開
+              {publishLabel}
             </button>
           </div>
         </div>
@@ -1099,6 +1140,11 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
                     disabled={!canEdit}
                     className="mt-2 h-11 w-full rounded-md border border-border bg-background px-3 text-[15px]"
                   />
+                  {config.publish.scheduledPublish ? (
+                    <span className="mt-1 block text-[12px] font-normal leading-5 text-foreground/55">
+                      先の日付にすると「公開」が「予約」に変わり、その日の0時に公開されます。
+                    </span>
+                  ) : null}
                 </label>
                 <label className="block text-[12px] font-bold">
                   カテゴリ
@@ -1371,7 +1417,7 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
               ) : (
                 <EyeOff size={17} />
               )}
-              取り下げ
+              {unpublishLabel}
             </button>
           )}
           <button
@@ -1386,11 +1432,11 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
                 isSaving ||
                 isUnpublishing
               }
-            title={publishButtonTitle(canEdit, canPublish, missingFields)}
+            title={publishButtonTitle(canEdit, canPublish, missingFields, willSchedule)}
             className="flex h-12 items-center justify-center gap-2 rounded-lg bg-foreground text-[14px] font-bold text-background disabled:opacity-40"
           >
             {isPublishing ? <Loader2 className="animate-spin" size={17} /> : <Send size={17} />}
-            公開
+            {publishLabel}
           </button>
         </div>
       </nav>
@@ -1412,10 +1458,11 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
 function publishButtonTitle(
   canEdit: boolean,
   canPublish: boolean,
-  missingFields: string[]
+  missingFields: string[],
+  willSchedule = false
 ): string {
   if (!canEdit) return VIEWER_NOTICE;
-  if (canPublish) return "公開する";
+  if (canPublish) return willSchedule ? "公開日の0時に公開されるよう予約する" : "公開する";
   return `公開には次の入力が必要です：${missingFields.join("・")}`;
 }
 

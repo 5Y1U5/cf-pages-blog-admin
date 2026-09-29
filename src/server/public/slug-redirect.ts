@@ -1,4 +1,4 @@
-import type { BlogAdminConfig } from "../../config/index.js";
+import { todayInConfiguredZone, type BlogAdminConfig } from "../../config/index.js";
 import type { BlogAdminEnv } from "../../config/env.js";
 
 /**
@@ -36,6 +36,10 @@ function normalizePath(pathname: string): string {
  *
  * 旧 URL を別の記事がいま使っている（同じパスを `published_url` に持つ記事がある）ときは転送しない。
  * その URL は生きているので、そのまま次へ流す。
+ *
+ * 予約公開（`publish.scheduledPublish`）を使うサイトでは、公開日がまだ来ていない記事へも送らない
+ * （行き先はまだ出ていないので 404 になり、公開前の URL も知られてしまう）。
+ * 旧 URL で別の記事を予約したときも、公開日が来るまではその記事を「いま使っている」とみなさず、転送を続ける。
  */
 export async function resolvePostRedirect(
   db: D1Database,
@@ -43,6 +47,8 @@ export async function resolvePostRedirect(
   pathname: string
 ): Promise<string | null> {
   const fromPath = normalizePath(pathname);
+  const scheduling = config.publish.scheduledPublish ? 1 : 0;
+  const today = todayInConfiguredZone(config);
   try {
     const row = await db
       .prepare(
@@ -51,13 +57,22 @@ export async function resolvePostRedirect(
          JOIN post_drafts p ON p.id = r.post_id AND p.client_id = r.client_id
          WHERE r.client_id = ? AND r.from_path = ?
            AND p.published_url IS NOT NULL
+           AND (? = 0 OR substr(p.date, 1, 10) <= ?)
            AND NOT EXISTS (
              SELECT 1 FROM post_drafts q
              WHERE q.client_id = r.client_id AND q.published_url = r.from_path
+               AND (? = 0 OR substr(q.date, 1, 10) <= ?)
            )
          LIMIT 1`
       )
-      .bind(config.clientId, fromPath)
+      .bind(
+        config.clientId,
+        fromPath,
+        scheduling,
+        today,
+        scheduling,
+        today
+      )
       .first<{ target: string }>();
     if (!row?.target) return null;
     const target = normalizePath(row.target);

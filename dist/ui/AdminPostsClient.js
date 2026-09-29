@@ -1,8 +1,8 @@
 "use client";
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { FileText, KeyRound, Plus, RefreshCw, Tags, Trash2, UsersRound } from "lucide-react";
-import { canEditContent, publicPostUrl } from "../config/index.js";
+import { canEditContent, isScheduledPost, publicPostUrl, todayInConfiguredZone, } from "../config/index.js";
 import { AdminLogoutButton } from "./AdminLogoutButton.js";
 import { AdminPasswordPanel } from "./AdminPasswordPanel.js";
 import { ADMIN_API, ADMIN_PATHS, editorPath, postApi } from "./paths.js";
@@ -21,7 +21,15 @@ function statusLabel(status) {
     };
     return labels[status] || "編集中";
 }
-function tabForPost(post) {
+function tabForPost(config, post) {
+    if (isScheduledPost(config, post))
+        return "scheduled";
+    // 予約中に保存して下書きに戻った記事は、published_url が残っていても公開日に出ない
+    if (config.publish.scheduledPublish &&
+        !PUBLIC_STATUSES.has(post.status) &&
+        String(post.date || "").slice(0, 10) > todayInConfiguredZone(config)) {
+        return "draft";
+    }
     return PUBLIC_STATUSES.has(post.status) || Boolean(post.published_url)
         ? "published"
         : "draft";
@@ -40,11 +48,22 @@ export function AdminPostsClient({ config, router, headerActions }) {
     // 閲覧専用（client_viewer）は記事を作れないので、新規作成の導線を出さない。
     const canEdit = canEditContent(role);
     const canDelete = role !== null && config.permissions.deletePost.includes(role);
-    const counts = useMemo(() => ({
-        published: posts.filter((post) => tabForPost(post) === "published").length,
-        draft: posts.filter((post) => tabForPost(post) === "draft").length,
-    }), [posts]);
-    const visiblePosts = useMemo(() => posts.filter((post) => tabForPost(post) === activeTab), [activeTab, posts]);
+    // 予約中かどうかは現在時刻で変わるので、件数と一覧は描くたびに同じ時刻で数え直す
+    // （片方だけ覚えておくと、0時をまたいだときに件数と中身が食い違う）
+    const counts = {
+        published: posts.filter((post) => tabForPost(config, post) === "published").length,
+        scheduled: posts.filter((post) => tabForPost(config, post) === "scheduled").length,
+        draft: posts.filter((post) => tabForPost(config, post) === "draft").length,
+    };
+    const visiblePosts = posts.filter((post) => tabForPost(config, post) === activeTab);
+    // 予約公開を使うサイトだけ「予約中」のタブを出す
+    const tabs = [
+        { value: "published", label: "公開中", count: counts.published },
+        ...(config.publish.scheduledPublish
+            ? [{ value: "scheduled", label: "予約中", count: counts.scheduled }]
+            : []),
+        { value: "draft", label: "下書き", count: counts.draft },
+    ];
     async function load() {
         const res = await fetch(ADMIN_API.posts, { cache: "no-store" });
         if (res.status === 401) {
@@ -74,12 +93,18 @@ export function AdminPostsClient({ config, router, headerActions }) {
         void load();
     }
     async function deletePost(post) {
-        const isPublic = tabForPost(post) === "published";
+        const tab = tabForPost(config, post);
+        const isPublic = tab === "published";
+        const stateText = isPublic
+            ? "公開中"
+            : tab === "scheduled"
+                ? `予約中（${post.date} に公開予定・まだ公開されていません）`
+                : "下書き（未公開）";
         const lines = [
             "記事を削除します。",
             "",
             `　タイトル：${post.title || "（無題）"}`,
-            `　状態：${isPublic ? "公開中" : "下書き（未公開）"}`,
+            `　状態：${stateText}`,
             "",
             isPublic
                 ? `この記事はいま公開されています。削除すると、サイトから記事ページごと消えます。\n記事の URL（${post.published_url || publicPostUrl(config, post.slug, post.post_type)}）は「ページが見つかりません（404）」になります。`
@@ -156,15 +181,18 @@ export function AdminPostsClient({ config, router, headerActions }) {
             cancelled = true;
         };
     }, []);
-    return (_jsxs("main", { className: "min-h-screen bg-[rgb(247,247,247)] px-4 pb-24 pt-6", children: [_jsxs("div", { className: "mx-auto max-w-[960px]", children: [_jsxs("div", { className: "flex items-start justify-between gap-3", children: [_jsxs("div", { children: [_jsx("p", { className: "text-[12px] font-bold tracking-[0.28em] text-foreground/50", children: config.brandLabel }), _jsx("h1", { className: "mt-2 text-[26px] font-bold leading-tight", children: "\u8A18\u4E8B\u4E00\u89A7" })] }), _jsxs("div", { className: "flex gap-2", children: [_jsx("button", { type: "button", onClick: () => setIsChangingPassword(true), className: "flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background", "aria-label": "\u30D1\u30B9\u30EF\u30FC\u30C9\u3092\u5909\u66F4", children: _jsx(KeyRound, { size: 18 }) }), isAdmin ? (_jsxs(_Fragment, { children: [headerActions, _jsxs(Link, { href: ADMIN_PATHS.categories, className: "flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background", children: [_jsx(Tags, { size: 18 }), _jsx("span", { className: "sr-only", children: "\u30AB\u30C6\u30B4\u30EA\u7BA1\u7406" })] }), _jsxs(Link, { href: ADMIN_PATHS.users, className: "flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background", children: [_jsx(UsersRound, { size: 18 }), _jsx("span", { className: "sr-only", children: "\u30E6\u30FC\u30B6\u30FC\u7BA1\u7406" })] })] })) : null, _jsx("button", { onClick: refresh, className: "flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background", "aria-label": "\u518D\u8AAD\u307F\u8FBC\u307F", children: _jsx(RefreshCw, { size: 18 }) }), _jsx(AdminLogoutButton, {})] })] }), !canEdit ? (_jsx("p", { className: "mt-6 rounded-lg border border-border bg-muted p-4 text-center text-[13px] font-bold text-foreground/75", children: VIEWER_NOTICE })) : null, message ? (_jsx("p", { className: "mt-6 rounded-lg border border-border bg-background p-4 text-[13px]", children: message })) : null, _jsx("div", { className: "mt-6 grid grid-cols-2 rounded-lg border border-border bg-background p-1", children: [
-                            { value: "published", label: "公開中", count: counts.published },
-                            { value: "draft", label: "下書き", count: counts.draft },
-                        ].map((tab) => {
+    return (_jsxs("main", { className: "min-h-screen bg-[rgb(247,247,247)] px-4 pb-24 pt-6", children: [_jsxs("div", { className: "mx-auto max-w-[960px]", children: [_jsxs("div", { className: "flex items-start justify-between gap-3", children: [_jsxs("div", { children: [_jsx("p", { className: "text-[12px] font-bold tracking-[0.28em] text-foreground/50", children: config.brandLabel }), _jsx("h1", { className: "mt-2 text-[26px] font-bold leading-tight", children: "\u8A18\u4E8B\u4E00\u89A7" })] }), _jsxs("div", { className: "flex gap-2", children: [_jsx("button", { type: "button", onClick: () => setIsChangingPassword(true), className: "flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background", "aria-label": "\u30D1\u30B9\u30EF\u30FC\u30C9\u3092\u5909\u66F4", children: _jsx(KeyRound, { size: 18 }) }), isAdmin ? (_jsxs(_Fragment, { children: [headerActions, _jsxs(Link, { href: ADMIN_PATHS.categories, className: "flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background", children: [_jsx(Tags, { size: 18 }), _jsx("span", { className: "sr-only", children: "\u30AB\u30C6\u30B4\u30EA\u7BA1\u7406" })] }), _jsxs(Link, { href: ADMIN_PATHS.users, className: "flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background", children: [_jsx(UsersRound, { size: 18 }), _jsx("span", { className: "sr-only", children: "\u30E6\u30FC\u30B6\u30FC\u7BA1\u7406" })] })] })) : null, _jsx("button", { onClick: refresh, className: "flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background", "aria-label": "\u518D\u8AAD\u307F\u8FBC\u307F", children: _jsx(RefreshCw, { size: 18 }) }), _jsx(AdminLogoutButton, {})] })] }), !canEdit ? (_jsx("p", { className: "mt-6 rounded-lg border border-border bg-muted p-4 text-center text-[13px] font-bold text-foreground/75", children: VIEWER_NOTICE })) : null, message ? (_jsx("p", { className: "mt-6 rounded-lg border border-border bg-background p-4 text-[13px]", children: message })) : null, _jsx("div", { className: tabs.length === 3
+                            ? "mt-6 grid grid-cols-3 rounded-lg border border-border bg-background p-1"
+                            : "mt-6 grid grid-cols-2 rounded-lg border border-border bg-background p-1", children: tabs.map((tab) => {
                             const isActive = activeTab === tab.value;
                             return (_jsxs("button", { type: "button", onClick: () => setActiveTab(tab.value), className: `flex h-11 items-center justify-center gap-2 rounded-md text-[13px] font-bold ${isActive ? "bg-foreground text-background" : "text-foreground/70"}`, children: [tab.label, _jsx("span", { className: isActive ? "text-background/70" : "text-foreground/45", children: tab.count })] }, tab.value));
                         }) }), _jsxs("div", { className: "mt-4 grid gap-3", children: [!isLoading && visiblePosts.length === 0 ? (_jsx("p", { className: "rounded-lg border border-border bg-background p-4 text-[13px] text-foreground/60", children: activeTab === "published"
                                     ? "公開中の記事はありません。"
-                                    : "下書きの記事はありません。" })) : null, visiblePosts.map((post) => (_jsx(Link, { href: editorPath(post.id), className: "rounded-lg border border-border bg-background p-4", children: _jsxs("div", { className: "flex items-start gap-3", children: [_jsx("div", { className: "mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted", children: _jsx(FileText, { size: 18 }) }), _jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("p", { className: "truncate text-[15px] font-bold", children: post.title }), _jsxs("p", { className: "mt-1 text-[12px] text-foreground/55", children: [post.category_label, " / ", post.date] }), _jsxs("div", { className: "mt-3 flex flex-wrap gap-2", children: [_jsx("span", { className: "rounded-full bg-muted px-2.5 py-1 text-[11px] font-bold", children: statusLabel(post.status) }), _jsxs("span", { className: "rounded-full bg-muted px-2.5 py-1 text-[11px]", children: ["\u6700\u7D42\u66F4\u65B0: ", new Date(post.updated_at).toLocaleString("ja-JP")] })] })] }), canDelete && (_jsx("button", { type: "button", onClick: (e) => {
+                                    : activeTab === "scheduled"
+                                        ? "予約中の記事はありません。"
+                                        : "下書きの記事はありません。" })) : null, visiblePosts.map((post) => (_jsx(Link, { href: editorPath(post.id), className: "rounded-lg border border-border bg-background p-4", children: _jsxs("div", { className: "flex items-start gap-3", children: [_jsx("div", { className: "mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted", children: _jsx(FileText, { size: 18 }) }), _jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("p", { className: "truncate text-[15px] font-bold", children: post.title }), _jsxs("p", { className: "mt-1 text-[12px] text-foreground/55", children: [post.category_label, " / ", post.date] }), _jsxs("div", { className: "mt-3 flex flex-wrap gap-2", children: [_jsx("span", { className: "rounded-full bg-muted px-2.5 py-1 text-[11px] font-bold", children: isScheduledPost(config, post)
+                                                                ? `予約中（${post.date} に公開）`
+                                                                : statusLabel(post.status) }), _jsxs("span", { className: "rounded-full bg-muted px-2.5 py-1 text-[11px]", children: ["\u6700\u7D42\u66F4\u65B0: ", new Date(post.updated_at).toLocaleString("ja-JP")] })] })] }), canDelete && (_jsx("button", { type: "button", onClick: (e) => {
                                                 e.preventDefault();
                                                 e.stopPropagation();
                                                 void deletePost(post);

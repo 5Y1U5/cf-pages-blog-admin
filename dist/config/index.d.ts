@@ -79,6 +79,15 @@ export interface BlogAdminPublishConfig {
      */
     blockFutureDate: boolean;
     /**
+     * 予約公開を使うか。true にすると、公開日を先の日付にして公開したとき止めずに「予約」として受け付け、
+     * その日の0時（`timezoneOffsetMinutes` の時刻）から公開ページに出る扱いにする。`blockFutureDate` より優先する。
+     *
+     * 公開ページが記事を毎回 D1 から読むサイトで、公開側が `todayInConfiguredZone` の日付で
+     * 絞っている場合だけ true にする。絞っていないサイトで true にすると、予約した記事がすぐ出てしまう。
+     * 既定は false（未来日の扱いは `blockFutureDate` のまま）。
+     */
+    scheduledPublish: boolean;
+    /**
      * 公開 URL の接頭辞。公開後の URL は `<publicPathPrefix>/<slug>` になる。
      * 実際のサイトの記事 URL に合わせること。ここがずれると、公開完了の案内や
      * 記事削除の確認ダイアログに、存在しない URL が出る。
@@ -195,6 +204,23 @@ export declare function clientPublishRequirements(config: BlogAdminConfig): Publ
 export declare function resolveDefaultCategory<T extends {
     slug: string;
 }>(config: BlogAdminConfig, categories: readonly T[]): T | null;
+/**
+ * 設定のタイムゾーンで見た「今日」（YYYY-MM-DD）。
+ * 公開処理の未来日の判定と、予約公開を使うサイトの公開側（今日以前の記事だけ出す）で同じものを使う。
+ */
+export declare function todayInConfiguredZone(config: {
+    publish: Pick<BlogAdminPublishConfig, "timezoneOffsetMinutes">;
+}, now?: number): string;
+/**
+ * 予約中の記事か（公開の操作は済んでいるが、公開日がまだ来ていない）。
+ * 予約公開を使っていないサイトでは常に false。公開日は先頭10文字（YYYY-MM-DD）で比べる。
+ */
+export declare function isScheduledPost(config: {
+    publish: Pick<BlogAdminPublishConfig, "timezoneOffsetMinutes" | "scheduledPublish">;
+}, post: {
+    status?: string | null;
+    date?: string | null;
+}, now?: number): boolean;
 /** 記事ファイルのパスを組み立てる（`postsDir/<slug>.md`）。 */
 export declare function postFilePath(config: BlogAdminConfig, slug: string): string;
 /** 公開 URL を組み立てる（`publicPathPrefix/<slug>`）。 */

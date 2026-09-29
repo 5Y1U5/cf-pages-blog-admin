@@ -29,10 +29,15 @@
  * :::faq
  * 何回噛めばよいですか？ | まずは最初の3口だけ箸を置くところから始めましょう。
  * :::
+ *
+ * :::youtube
+ * https://www.youtube.com/watch?v=XXXXXXXXXXX
+ * :::
  * ```
  *
  * ブロックの中身はこのモジュールが必ずエスケープしてから組み立てる。
  * 例外はリンクと強調だけで、リンクは http/https のみ通す。
+ * youtube は URL から11文字の動画 ID だけを取り出し、埋め込みの URL はこちらで組み立てる。
  */
 
 /** 使えるブロック名。 */
@@ -42,6 +47,7 @@ export const ARTICLE_BLOCK_NAMES = [
   "compare",
   "stat",
   "faq",
+  "youtube",
 ] as const;
 
 export type ArticleBlockName = (typeof ARTICLE_BLOCK_NAMES)[number];
@@ -162,9 +168,59 @@ const CALLOUT_ICON =
   'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
   '<path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/></svg>';
 
+const YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+const YOUTUBE_HOSTS = new Set(["youtube.com", "www.youtube.com", "m.youtube.com"]);
+
+/**
+ * YouTube の URL から11文字の動画 ID を取り出す。取り出せなければ null。
+ * 受け付けるのは `youtube.com/watch?v=` ／ `youtu.be/` ／ `youtube.com/shorts/` の3つ。
+ */
+export function youtubeVideoId(value: string): string | null {
+  const text = value.trim();
+  if (!text) return null;
+  let url: URL;
+  try {
+    // 共有ボタンからコピーしたときなど、スキームが落ちた形（youtu.be/...）も受ける
+    url = new URL(/^https?:\/\//i.test(text) ? text : `https://${text}`);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.toLowerCase();
+  let id: string | null = null;
+  if (host === "youtu.be") {
+    id = url.pathname.split("/")[1] ?? null;
+  } else if (YOUTUBE_HOSTS.has(host)) {
+    if (url.pathname === "/watch") id = url.searchParams.get("v");
+    else id = /^\/shorts\/([^/]+)/.exec(url.pathname)?.[1] ?? null;
+  }
+  return id && YOUTUBE_ID_RE.test(id) ? id : null;
+}
+
+// 動画の枠の見た目は style 属性で持つ。導入先の CSS に手を入れなくても
+// 横幅いっぱい・16:9 で出るようにするため（クラス名は導入先で上書きしたいとき用）。
+const YOUTUBE_FRAME_STYLE =
+  "position:relative;width:100%;aspect-ratio:16/9;margin:26px 0;" +
+  "border-radius:12px;overflow:hidden;background:#000";
+const YOUTUBE_IFRAME_STYLE =
+  "position:absolute;top:0;left:0;width:100%;height:100%;border:0";
+
 /** ブロック1つを HTML にする。中身は必ずエスケープ済み。 */
 export function renderArticleBlock(block: ArticleBlock): string {
   const { name, arg, lines } = block;
+
+  if (name === "youtube") {
+    // 本文に書いた文字は出力に入れない。ID が取り出せなければ何も出さない
+    const id = [...lines, arg].map(youtubeVideoId).find(Boolean);
+    if (!id) return "";
+    return (
+      `<div class="blog-youtube" style="${YOUTUBE_FRAME_STYLE}">` +
+      `<iframe src="https://www.youtube-nocookie.com/embed/${id}" title="YouTube 動画" ` +
+      'loading="lazy" referrerpolicy="strict-origin-when-cross-origin" ' +
+      'allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" ' +
+      `allowfullscreen style="${YOUTUBE_IFRAME_STYLE}"></iframe>` +
+      "</div>"
+    );
+  }
 
   if (name === "callout") {
     const heading = arg ? `<strong>${inline(arg)}</strong>` : "";

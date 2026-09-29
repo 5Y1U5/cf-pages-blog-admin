@@ -2,6 +2,28 @@
 
 semver に従う。major に倒す条件は README の「バージョニング」を参照。
 
+## 5.1.0
+
+本文に YouTube の動画を埋め込む枠 `:::youtube` を足した。既存の記法・設定・migration・API は変わらない。
+導入先では更新を取り込むだけでよい（公開ページの CSS も不要）。
+
+```
+:::youtube
+https://www.youtube.com/watch?v=XXXXXXXXXXX
+:::
+```
+
+- `content/article-blocks`: `youtube` を `ARTICLE_BLOCK_NAMES` に追加。`youtube.com/watch?v=` ／ `youtu.be/` ／
+  `youtube.com/shorts/` の URL から11文字の動画 ID だけを取り出し、`youtube-nocookie.com/embed/<ID>` の
+  iframe（`loading="lazy"`・`title` 付き・横幅いっぱいで 16:9）を出す。ID が取り出せなければ何も出さない。
+  取り出し処理を `youtubeVideoId` として公開した
+- URL だけの行は今までどおり文字のまま。既存の記事の見た目は変わらない
+- `ui` の `ArticleBody`: 何も出さない枠（URL を読み取れない動画）は空の `div` も出さない
+- 見たまま編集（通常の編集）: 他の枠と同じく編集できないカードとして動画を表示する（カードの中では再生しない）。
+  URL を読み取れないときは、カードとプレビューにその旨を出す
+- Content-Security-Policy を出しているサイトは `frame-src https://www.youtube-nocookie.com` が要る
+- テスト: 動画の枠の組み立てと、見たまま編集を通した往復の回帰テストを追加
+
 ## 5.0.0
 
 編集画面の2つの不具合を直した。設定・migration・API の変更は無いが、画面の挙動が利用者から見て変わるため

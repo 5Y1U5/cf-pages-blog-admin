@@ -34,19 +34,21 @@ export interface ArticleBodyProps {
 export function ArticleBody({ content, renderMarkdown }: ArticleBodyProps) {
   return (
     <>
-      {splitArticleContent(content).map((segment, index) =>
-        segment.kind === "block" ? (
-          <div
-            key={`block-${index}`}
-            dangerouslySetInnerHTML={{ __html: renderArticleBlock(segment) }}
-          />
-        ) : (
+      {splitArticleContent(content).map((segment, index) => {
+        if (segment.kind === "block") {
+          const html = renderArticleBlock(segment);
+          // 何も出さない枠（URL を読み取れない動画など）は、空の div も残さない
+          return html ? (
+            <div key={`block-${index}`} dangerouslySetInnerHTML={{ __html: html }} />
+          ) : null;
+        }
+        return (
           // Markdown 部分は要素で包まない。導入先の記事CSSが
           // `.article-body > * + *` のような直下セレクタで余白を作っていることが多く、
           // div で包むと段落どうしの余白が消えるため。
           <Fragment key={`markdown-${index}`}>{renderMarkdown(segment.text)}</Fragment>
-        )
-      )}
+        );
+      })}
     </>
   );
 }

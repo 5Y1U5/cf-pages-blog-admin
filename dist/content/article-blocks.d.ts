@@ -29,13 +29,18 @@
  * :::faq
  * 何回噛めばよいですか？ | まずは最初の3口だけ箸を置くところから始めましょう。
  * :::
+ *
+ * :::youtube
+ * https://www.youtube.com/watch?v=XXXXXXXXXXX
+ * :::
  * ```
  *
  * ブロックの中身はこのモジュールが必ずエスケープしてから組み立てる。
  * 例外はリンクと強調だけで、リンクは http/https のみ通す。
+ * youtube は URL から11文字の動画 ID だけを取り出し、埋め込みの URL はこちらで組み立てる。
  */
 /** 使えるブロック名。 */
-export declare const ARTICLE_BLOCK_NAMES: readonly ["callout", "points", "compare", "stat", "faq"];
+export declare const ARTICLE_BLOCK_NAMES: readonly ["callout", "points", "compare", "stat", "faq", "youtube"];
 export type ArticleBlockName = (typeof ARTICLE_BLOCK_NAMES)[number];
 export interface ArticleBlock {
     kind: "block";
@@ -55,6 +60,11 @@ export type ArticleSegment = ArticleMarkdown | ArticleBlock;
  * 閉じ忘れたブロックは、そのまま Markdown として扱う（記事が消えるより崩れて見えるほうがよい）。
  */
 export declare function splitArticleContent(markdown: string): ArticleSegment[];
+/**
+ * YouTube の URL から11文字の動画 ID を取り出す。取り出せなければ null。
+ * 受け付けるのは `youtube.com/watch?v=` ／ `youtu.be/` ／ `youtube.com/shorts/` の3つ。
+ */
+export declare function youtubeVideoId(value: string): string | null;
 /** ブロック1つを HTML にする。中身は必ずエスケープ済み。 */
 export declare function renderArticleBlock(block: ArticleBlock): string;
 /**

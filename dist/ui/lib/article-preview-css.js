@@ -42,6 +42,11 @@ export const PREVIEW_ARTICLE_CSS = `
 .admin-article-block > div > * { margin-top: 0; margin-bottom: 0; }
 .admin-article-block.ProseMirror-selectednode { outline: 2px solid #38bdf8; outline-offset: 4px; }
 .admin-article-preview .admin-article-block-note { margin: 6px 0 0; font-size: 11px; line-height: 1.6; color: #94a3b8; }
+.admin-article-preview .admin-article-block-empty { margin: 18px 0; padding: 14px 16px; border: 1px dashed #f59e0b; border-radius: 12px; background: #fffbeb; color: #92400e; font-size: 13px; line-height: 1.7; }
+.admin-article-block .admin-article-block-empty { margin: 0; }
+/* 見たまま編集のカードでは動画を再生させず、クリックでカードを選べるようにする。再生はプレビューで確かめる */
+.admin-article-block .blog-youtube { margin: 0 !important; }
+.admin-article-block iframe { pointer-events: none; }
 .tiptap .admin-article-block p { margin-top: 0; margin-bottom: 0; line-height: 1.8; }
 .tiptap .admin-article-block .admin-article-block-note { margin-top: 6px; }
 @media (max-width: 640px) { .admin-article-preview .blog-points, .admin-article-preview .blog-compare { grid-template-columns: 1fr; } }

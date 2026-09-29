@@ -117,7 +117,7 @@ export default function Page() {
 ## 本文のブロック記法
 
 写真を使わない記事でも読み進められるよう、本文に差し込む視覚要素を Markdown から書ける。
-生の HTML を本文に許すのではなく、決まった5種類だけを記法で受ける
+生の HTML を本文に許すのではなく、決まった6種類だけを記法で受ける
 （公開側のサニタイズを外さずに済み、書き手が増えても崩れない）。
 
 ```
@@ -142,6 +142,10 @@ export default function Page() {
 :::faq
 何回噛めばよいですか？ | まずは最初の3口だけ箸を置くところから始めましょう。
 :::
+
+:::youtube
+https://www.youtube.com/watch?v=XXXXXXXXXXX
+:::
 ```
 
 公開側では Markdown 変換の前後をこのパッケージに任せる。Markdown 本体の変換だけ渡す
@@ -159,6 +163,10 @@ CSS のひな形は `docs/article-blocks.css`。色の変数3つを差し替え�
 
 - 中身は必ずエスケープしてから組み立てる。リンクは http/https のみ、強調は `**...**` のみ通す
 - 閉じ忘れたブロックは Markdown としてそのまま出す（記事が消えるより崩れて見えるほうがよい）
+- `youtube` は `youtube.com/watch?v=` ／ `youtu.be/` ／ `youtube.com/shorts/` の URL から11文字の動画 ID だけを取り出し、
+  `https://www.youtube-nocookie.com/embed/<ID>` の iframe を横幅いっぱい・16:9 の枠で出す。ID が取り出せなければ何も出さない。
+  枠の見た目は style 属性で持つので導入先の CSS は要らない。Content-Security-Policy を出しているサイトは
+  `frame-src https://www.youtube-nocookie.com` を足さないと表示されない。URL だけの行は動画にしない（既存の本文の見た目を変えないため）
 - 編集画面のプレビューはラベルだけの簡易表示。実際の見た目は公開ページの CSS が決める
 
 ## 設定

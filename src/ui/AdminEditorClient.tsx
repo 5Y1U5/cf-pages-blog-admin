@@ -33,6 +33,7 @@ import {
   translateUploadError,
 } from "./lib/admin-image.js";
 import { markdownToHtml } from "./lib/admin-markdown.js";
+import { YOUTUBE_UNREADABLE_MESSAGE } from "./lib/article-block-node.js";
 import { PREVIEW_ARTICLE_CSS } from "./lib/article-preview-css.js";
 import {
   ADMIN_API,
@@ -983,10 +984,16 @@ export function AdminEditorClient({ config, router }: AdminEditorClientProps) {
               <div className="admin-article-preview mt-7 text-[15px] leading-8">
                 {previewSegments.map((segment, index) =>
                   segment.kind === "block" ? (
-                    <div
-                      key={`block-${index}`}
-                      dangerouslySetInnerHTML={{ __html: renderArticleBlock(segment) }}
-                    />
+                    segment.name === "youtube" && !renderArticleBlock(segment) ? (
+                      <p key={`block-${index}`} className="admin-article-block-empty">
+                        {YOUTUBE_UNREADABLE_MESSAGE}
+                      </p>
+                    ) : (
+                      <div
+                        key={`block-${index}`}
+                        dangerouslySetInnerHTML={{ __html: renderArticleBlock(segment) }}
+                      />
+                    )
                   ) : (
                     <div
                       key={`markdown-${index}`}

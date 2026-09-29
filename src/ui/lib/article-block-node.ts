@@ -13,6 +13,10 @@ import { Node } from "@tiptap/core";
 import { renderArticleBlock, splitArticleContent } from "../../content/article-blocks.js";
 import { ARTICLE_BLOCK_ATTR, ARTICLE_BLOCK_SOURCE_ATTR } from "./admin-markdown.js";
 
+/** 動画の枠から URL を読み取れなかったときに、編集画面にだけ出す案内。 */
+export const YOUTUBE_UNREADABLE_MESSAGE =
+  "YouTube の URL を読み取れませんでした。公開ページには何も表示されません。「マークダウンで編集」で URL を確かめてください";
+
 function decodeSource(value: string | null): string {
   if (!value) return "";
   try {
@@ -77,6 +81,19 @@ export const ArticleBlock = Node.create({
       const card = document.createElement("div");
       // renderArticleBlock は中身をすべてエスケープしてから組み立てる
       card.innerHTML = segment && segment.kind === "block" ? renderArticleBlock(segment) : "";
+      if (segment?.kind === "block" && segment.name === "youtube") {
+        if (!card.innerHTML) {
+          // 公開ページでは何も出ない。気づけるよう編集画面にだけ理由を出す
+          card.className = "admin-article-block-empty";
+          card.textContent = YOUTUBE_UNREADABLE_MESSAGE;
+        }
+        // カードの中の動画はクリックでもキーボードでも操作させない（再生はプレビューで確かめる）。
+        // inert に対応しない環境向けに、iframe を Tab の順番からも外しておく
+        card.setAttribute("inert", "");
+        card.querySelectorAll("iframe").forEach((frame) => {
+          frame.tabIndex = -1;
+        });
+      }
       dom.appendChild(card);
 
       const note = document.createElement("p");

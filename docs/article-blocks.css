@@ -219,6 +219,11 @@
   line-height: 1.85;
 }
 
+/*
+ * 動画（:::youtube）は横幅いっぱい・16:9 の見た目を style 属性で持っているので、ここに書かなくても出る。
+ * 余白や角丸を変えたいときだけ .blog-youtube に書く（style 属性より強くするには !important が要る）。
+ */
+
 /* スマホでは1列に落とす */
 @media (max-width: 640px) {
   .blog-points,

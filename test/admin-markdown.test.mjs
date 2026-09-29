@@ -195,6 +195,24 @@ describe("見たまま編集と装飾枠", () => {
     assert.equal(html.includes("本文だけで閉じていない"), true);
   });
 
+  it("動画の枠も塊になり、見たまま編集を通しても URL が崩れない", async () => {
+    const source = [
+      "動画で紹介します。",
+      "",
+      ":::youtube",
+      "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s",
+      ":::",
+      "",
+      "続きの段落です。",
+    ].join("\n");
+    const html = markdownToEditorHtml(source);
+    assert.equal((html.match(/data-article-block=""/g) || []).length, 1);
+    // 見たまま編集に渡す段階では iframe を作らない（原文を文字として持つだけ）
+    assert.equal(html.includes("<iframe"), false);
+    const back = await htmlToMarkdown(throughEditor(html));
+    assert.equal(normalizeMarkdown(back), normalizeMarkdown(source));
+  });
+
   it("空の本文は空文字を返す", () => {
     assert.equal(markdownToEditorHtml("  \n "), "");
   });

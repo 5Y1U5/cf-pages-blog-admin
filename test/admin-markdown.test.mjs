@@ -217,3 +217,117 @@ describe("見たまま編集と装飾枠", () => {
     assert.equal(markdownToEditorHtml("  \n "), "");
   });
 });
+
+// 表も枠と同じく原文を持った塊にする。見たまま編集に表の部品が無いため、
+// 何もしないと表はセルの文字だけが1段落に連結され、保存すると表が消える（2026-10-06 に発生）。
+
+// 不具合が出た記事と同じ並び（枠の直後に表、表の直後に見出し）
+const ARTICLE_WITH_TABLE = [
+  "書き出しの段落です。",
+  "",
+  ":::callout 先に結論",
+  "準備から本番までは、次の順番で進めます。",
+  ":::",
+  "",
+  "| 工程 | やること | 目安 |",
+  "| --- | --- | --- |",
+  "| 準備 | 資料を机に並べる | 5分ほど |",
+  "| 話す | 最初の一言を決めておく | 30秒以内 |",
+  "",
+  "## 準備を始める合図は？",
+  "",
+  "本文の段落です。[関連の記事](/blog/sample-post)も入れます。",
+  "",
+  "| 確かめること | 確かめ方 |",
+  "| :--- | ---: |",
+  "| 長さ | 3分・5分 |",
+  "",
+  ":::points",
+  "場面 01 | 会議で急に指名されたとき。",
+  ":::",
+].join("\n");
+
+describe("見たまま編集と表", () => {
+  it("表は原文を持った塊の要素になり、table 要素のまま見たまま編集に渡さない", () => {
+    const html = markdownToEditorHtml(ARTICLE_WITH_TABLE);
+    // 枠2つ＋表2つ
+    assert.equal((html.match(/data-article-block=""/g) || []).length, 4);
+    assert.equal(html.includes("<table"), false);
+    // 表以外の本文は今までどおり HTML になる
+    assert.equal(html.includes("<h2>準備を始める合図は？</h2>"), true);
+    assert.equal(html.includes('<a href="/blog/sample-post">関連の記事</a>'), true);
+  });
+
+  it("見たまま編集に読み込ませて書き出しても表が崩れない", async () => {
+    const back = await htmlToMarkdown(throughEditor(markdownToEditorHtml(ARTICLE_WITH_TABLE)));
+    assert.equal(normalizeMarkdown(back), normalizeMarkdown(ARTICLE_WITH_TABLE));
+    // 以前の不具合の形（セルの文字が1行に連結）になっていない
+    assert.equal(back.includes("工程やること目安"), false);
+  });
+
+  it("表のセルのリンク・記号・エスケープした縦線をそのまま運ぶ", async () => {
+    const source = [
+      "| 項目 | 内容 |",
+      "| --- | --- |",
+      "| A & B | <b>太字</b> と a \\| b |",
+      "| 外部 | [公式の案内](https://example.com/a?x=1&y=2) |",
+    ].join("\n");
+    const back = await htmlToMarkdown(throughEditor(markdownToEditorHtml(source)));
+    assert.equal(normalizeMarkdown(back), normalizeMarkdown(source));
+  });
+
+  it("表の原文に HTML を仕込んでも要素として出さない", () => {
+    const html = markdownToEditorHtml('| a | b |\n| --- | --- |\n| "><img src=x onerror=alert(1)> | c |');
+    assert.equal(html.includes("<img"), false);
+    assert.equal(html.includes('"><'), false);
+    const json = generateJSON(html, editorExtensions);
+    assert.equal(JSON.stringify(json).includes('"type":"image"'), false);
+  });
+
+  it("表の前後に分かれた参照形式のリンクも解決する", () => {
+    const md = [
+      "[参考資料][ref] を見てください。",
+      "",
+      "| a | b |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+      "",
+      "[ref]: https://example.com/docs",
+    ].join("\n");
+    const html = markdownToEditorHtml(md);
+    assert.equal(html.includes('<a href="https://example.com/docs">参考資料</a>'), true);
+    assert.equal((html.match(/data-article-block=""/g) || []).length, 1);
+  });
+
+  it("表のセルの参照形式のリンク・画像は、表の外の定義ごと運ぶ", async () => {
+    const md = [
+      "| 項目 | 内容 |",
+      "| --- | --- |",
+      "| 資料 | [説明][Ref] と [doc] |",
+      "| 写真 | ![写真][photo] |",
+      "",
+      "本文の段落です。",
+      "",
+      "[ref]: https://example.com/docs \"資料の題\"",
+      "[doc]: https://example.com/doc",
+      "[photo]: https://example.com/photo.webp",
+      "[unused]: https://example.com/unused",
+    ].join("\n");
+    const back = await htmlToMarkdown(throughEditor(markdownToEditorHtml(md)));
+    // 保存した本文を公開側と同じく HTML にしても、表の中のリンクと画像の行き先が残る
+    const html = markdownToHtml(back);
+    assert.equal(html.includes('<a href="https://example.com/docs" title="資料の題">説明</a>'), true);
+    assert.equal(html.includes('<a href="https://example.com/doc">doc</a>'), true);
+    assert.equal(html.includes('src="https://example.com/photo.webp"'), true);
+    assert.equal(back.includes("[説明][Ref]"), true);
+    // 表で使っていない定義までは運ばない
+    assert.equal(back.includes("example.com/unused"), false);
+  });
+
+  it("表のカードの原文は、それだけで参照形式のリンクが解決できる", () => {
+    const md = ["| a |", "| --- |", "| [説明][ref] |", "", "[ref]: https://example.com/docs"].join("\n");
+    const match = /data-source="([^"]*)"/.exec(markdownToEditorHtml(md));
+    const source = decodeURIComponent(match?.[1] ?? "");
+    assert.equal(markdownToHtml(source).includes('<a href="https://example.com/docs">説明</a>'), true);
+  });
+});

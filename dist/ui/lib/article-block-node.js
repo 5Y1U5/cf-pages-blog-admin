@@ -7,9 +7,12 @@
 // そこで枠は原文（`:::名前 引数` から閉じの `:::` まで）を属性に丸ごと持つ塊にする。
 // 見たまま編集では中身を直せないカードとして表示し、削除・並べ替えだけできる。
 // 中身を直したいときは「マークダウンで編集」に切り替える。
+//
+// Markdown の表も同じ塊にする（markdownToEditorHtml が表を塊の要素で渡す）。見たまま編集には
+// 表の部品が無く、table のまま読ませるとセルの文字が1段落に連結され、保存すると表が消えるため。
 import { Node } from "@tiptap/core";
 import { renderArticleBlock, splitArticleContent } from "../../content/article-blocks.js";
-import { ARTICLE_BLOCK_ATTR, ARTICLE_BLOCK_SOURCE_ATTR } from "./admin-markdown.js";
+import { ARTICLE_BLOCK_ATTR, ARTICLE_BLOCK_SOURCE_ATTR, markdownToHtml } from "./admin-markdown.js";
 /** 動画の枠から URL を読み取れなかったときに、編集画面にだけ出す案内。 */
 export const YOUTUBE_UNREADABLE_MESSAGE = "YouTube の URL を読み取れませんでした。公開ページには何も表示されません。「マークダウンで編集」で URL を確かめてください";
 function decodeSource(value) {
@@ -65,10 +68,21 @@ export const ArticleBlock = Node.create({
             dom.className = "admin-article-preview admin-article-block";
             dom.contentEditable = "false";
             dom.setAttribute(ARTICLE_BLOCK_ATTR, "");
-            const segment = splitArticleContent(String(node.attrs.source ?? "")).find((item) => item.kind === "block");
+            const source = String(node.attrs.source ?? "");
+            const segment = splitArticleContent(source).find((item) => item.kind === "block");
+            // `:::` の枠でない塊は表（markdownToEditorHtml が表だけを塊にしている）
+            const isTable = !segment;
             const card = document.createElement("div");
-            // renderArticleBlock は中身をすべてエスケープしてから組み立てる
-            card.innerHTML = segment && segment.kind === "block" ? renderArticleBlock(segment) : "";
+            if (isTable) {
+                // markdownToHtml は生の HTML を落とし、危ないリンク先を外してから描く（プレビューと同じ変換）
+                card.innerHTML = markdownToHtml(source);
+                // セルの中のリンクを押して編集中の画面から離れないよう、カードの中は操作させない
+                card.setAttribute("inert", "");
+            }
+            else {
+                // renderArticleBlock は中身をすべてエスケープしてから組み立てる
+                card.innerHTML = segment.kind === "block" ? renderArticleBlock(segment) : "";
+            }
             if (segment?.kind === "block" && segment.name === "youtube") {
                 if (!card.innerHTML) {
                     // 公開ページでは何も出ない。気づけるよう編集画面にだけ理由を出す
@@ -85,7 +99,9 @@ export const ArticleBlock = Node.create({
             dom.appendChild(card);
             const note = document.createElement("p");
             note.className = "admin-article-block-note";
-            note.textContent = "装飾枠の中身は「マークダウンで編集」で直せます";
+            note.textContent = isTable
+                ? "表の中身は「マークダウンで編集」で直せます"
+                : "装飾枠の中身は「マークダウンで編集」で直せます";
             dom.appendChild(note);
             return {
                 dom,

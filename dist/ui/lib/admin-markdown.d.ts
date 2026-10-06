@@ -9,7 +9,7 @@ export declare function articleBlockSource(block: ArticleBlock): string;
 /**
  * 見たまま編集に渡す HTML を作る。
  *
- * markdownToHtml と違い、装飾枠（`:::callout` など）を段落にせず、原文を持った塊の要素にする。
+ * markdownToHtml と違い、装飾枠（`:::callout` など）と表を段落にせず、原文を持った塊の要素にする。
  * 見たまま編集はこの要素を ArticleBlock として読み、保存時は htmlToMarkdown が原文へ戻す。
  * 閉じ忘れの枠は splitArticleContent が通常の Markdown として返すので、今までどおり段落になる。
  */

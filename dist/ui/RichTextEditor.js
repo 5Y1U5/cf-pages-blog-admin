@@ -88,8 +88,11 @@ export const RichTextEditor = forwardRef(function RichTextEditor({ markdown, onC
     });
     // 権限は /api/admin/me の応答後に確定するため、生成時のオプションだけでは足りない。
     // editable が変わったらエディタへ反映する。
+    // 第2引数を false にして更新の通知を出さない。TipTap の既定は通知を出し、onUpdate が走って
+    // 本文がマークダウンへ往復し直される。記事を開いただけで、往復で変わる部分（以前の表など）が
+    // 書き換わっていた（2026-10-06）。
     useEffect(() => {
-        editor?.setEditable(editable);
+        editor?.setEditable(editable, false);
     }, [editor, editable]);
     // 記事の読み込みなど、親側で本文が差し替わったときにエディタへ反映する
     useEffect(() => {

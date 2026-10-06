@@ -3,7 +3,7 @@
 // 記事の保存形式はマークダウンのまま。編集中だけ HTML として扱い、保存時にマークダウンへ戻すため、
 // 公開パイプライン（server/_shared/posts.ts）は変換の有無に影響されない。
 
-import { Marked, type Links } from "marked";
+import { Marked, type Links, type Token } from "marked";
 import type TurndownService from "turndown";
 
 import { splitArticleContent, type ArticleBlock } from "../../content/article-blocks.js";
@@ -155,14 +155,6 @@ export function markdownToHtml(markdown: string): string {
   return previewMarked.parse(markdown, { async: false }) as string;
 }
 
-/** 記事全体で集めた参照リンクの定義を使って、本文の一部を HTML にする。 */
-function markdownToHtmlWithLinks(markdown: string, links: Links): string {
-  if (!markdown.trim()) return "";
-  const lexer = new previewMarked.Lexer(previewMarked.defaults);
-  Object.assign(lexer.tokens.links, links);
-  return previewMarked.parser(lexer.lex(markdown)) as string;
-}
-
 /** 装飾枠を記法どおりの原文に組み直す（開始行・中身・閉じ行）。 */
 export function articleBlockSource(block: ArticleBlock): string {
   const open = block.arg ? `:::${block.name} ${block.arg}` : `:::${block.name}`;
@@ -173,10 +165,65 @@ function escapeText(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/** 原文を持った塊の要素。見たまま編集では ArticleBlock（編集できないカード）として読まれる。 */
+function articleBlockElement(source: string): string {
+  return (
+    `<div ${ARTICLE_BLOCK_ATTR}="" ${ARTICLE_BLOCK_SOURCE_ATTR}="${encodeURIComponent(source)}">` +
+    `${escapeText(source)}</div>`
+  );
+}
+
+/**
+ * 表の原文に、表の中で使っている参照形式のリンク・画像（`[説明][ref]` など）の定義を書き足す。
+ *
+ * 定義は表の外（記事の末尾など）にあることが多い。表は原文のまま塊にするが、表の外の本文は
+ * 保存時にインラインのリンクへ書き直されて定義の行が消えるため、何もしないと表の中のリンクだけが
+ * 行き先を失う。定義を表の直後へ移しておけば、保存後も公開側で同じ行き先に解決される。
+ */
+function withReferenceDefinitions(table: string, links: Links): string {
+  // marked は定義の名前を小文字にし、空白を1つに詰めて持っている。表の側も同じ形にして探す
+  const normalized = table.replace(/\s+/g, " ").toLowerCase();
+  const definitions = Object.entries(links)
+    .filter(([label]) => normalized.includes(`[${label}]`))
+    .map(([label, { href, title }]) => {
+      const target = /[\s<>]/.test(href) ? `<${href}>` : href;
+      return title ? `[${label}]: ${target} "${title.replace(/"/g, '\\"')}"` : `[${label}]: ${target}`;
+    });
+  return definitions.length ? `${table}\n\n${definitions.join("\n")}` : table;
+}
+
+/**
+ * 記事全体で集めた参照リンクの定義を使って、枠の外の本文を見たまま編集用の HTML にする。
+ *
+ * 表だけは table にせず、原文を持った塊の要素にする。見たまま編集には表の部品が無く、
+ * table のまま渡すとセルの文字が1段落に連結され、保存すると表が消える（2026-10-06 に発生）。
+ */
+function markdownToEditorHtmlWithLinks(markdown: string, links: Links): string {
+  if (!markdown.trim()) return "";
+  const lexer = new previewMarked.Lexer(previewMarked.defaults);
+  Object.assign(lexer.tokens.links, links);
+  const parts: string[] = [];
+  let run: Token[] = [];
+  const flush = () => {
+    if (run.length) parts.push(previewMarked.parser(run) as string);
+    run = [];
+  };
+  for (const token of lexer.lex(markdown)) {
+    if (token.type === "table") {
+      flush();
+      parts.push(articleBlockElement(withReferenceDefinitions(token.raw.trim(), links)));
+    } else {
+      run.push(token);
+    }
+  }
+  flush();
+  return parts.join("\n");
+}
+
 /**
  * 見たまま編集に渡す HTML を作る。
  *
- * markdownToHtml と違い、装飾枠（`:::callout` など）を段落にせず、原文を持った塊の要素にする。
+ * markdownToHtml と違い、装飾枠（`:::callout` など）と表を段落にせず、原文を持った塊の要素にする。
  * 見たまま編集はこの要素を ArticleBlock として読み、保存時は htmlToMarkdown が原文へ戻す。
  * 閉じ忘れの枠は splitArticleContent が通常の Markdown として返すので、今までどおり段落になる。
  */
@@ -187,12 +234,8 @@ export function markdownToEditorHtml(markdown: string): string {
   const links = previewMarked.lexer(markdown).links;
   return splitArticleContent(markdown)
     .map((segment) => {
-      if (segment.kind === "markdown") return markdownToHtmlWithLinks(segment.text, links);
-      const source = articleBlockSource(segment);
-      return (
-        `<div ${ARTICLE_BLOCK_ATTR}="" ${ARTICLE_BLOCK_SOURCE_ATTR}="${encodeURIComponent(source)}">` +
-        `${escapeText(source)}</div>`
-      );
+      if (segment.kind === "markdown") return markdownToEditorHtmlWithLinks(segment.text, links);
+      return articleBlockElement(articleBlockSource(segment));
     })
     .join("\n");
 }

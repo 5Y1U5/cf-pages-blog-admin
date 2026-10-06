@@ -157,22 +157,31 @@ function articleBlockElement(source) {
         `${escapeText(source)}</div>`);
 }
 /**
+ * 記事の中の定義を原文のまま集める。同じ名前が2回あれば、marked と同じく先に書いた方を使う。
+ * 行き先を `href` から書き直すと、エスケープ（`\\`）や `<>` 囲みが変わって行き先がずれるため、原文を持つ。
+ */
+function collectReferenceDefinitions(tokens) {
+    const definitions = new Map();
+    for (const token of tokens) {
+        if (token.type === "def" && !definitions.has(token.tag))
+            definitions.set(token.tag, token.raw.trim());
+    }
+    return definitions;
+}
+/**
  * 表の原文に、表の中で使っている参照形式のリンク・画像（`[説明][ref]` など）の定義を書き足す。
  *
  * 定義は表の外（記事の末尾など）にあることが多い。表は原文のまま塊にするが、表の外の本文は
  * 保存時にインラインのリンクへ書き直されて定義の行が消えるため、何もしないと表の中のリンクだけが
- * 行き先を失う。定義を表の直後へ移しておけば、保存後も公開側で同じ行き先に解決される。
+ * 行き先を失う。定義の原文を表の直後へ移しておけば、保存後も公開側で同じ行き先に解決される。
  */
-function withReferenceDefinitions(table, links) {
-    // marked は定義の名前を小文字にし、空白を1つに詰めて持っている。表の側も同じ形にして探す
+function withReferenceDefinitions(table, definitions) {
+    // 定義の名前は小文字・空白1つに詰めた形なので、表の側も同じ形にして探す
     const normalized = table.replace(/\s+/g, " ").toLowerCase();
-    const definitions = Object.entries(links)
+    const used = [...definitions]
         .filter(([label]) => normalized.includes(`[${label}]`))
-        .map(([label, { href, title }]) => {
-        const target = /[\s<>]/.test(href) ? `<${href}>` : href;
-        return title ? `[${label}]: ${target} "${title.replace(/"/g, '\\"')}"` : `[${label}]: ${target}`;
-    });
-    return definitions.length ? `${table}\n\n${definitions.join("\n")}` : table;
+        .map(([, source]) => source);
+    return used.length ? `${table}\n\n${used.join("\n")}` : table;
 }
 /**
  * 記事全体で集めた参照リンクの定義を使って、枠の外の本文を見たまま編集用の HTML にする。
@@ -180,7 +189,7 @@ function withReferenceDefinitions(table, links) {
  * 表だけは table にせず、原文を持った塊の要素にする。見たまま編集には表の部品が無く、
  * table のまま渡すとセルの文字が1段落に連結され、保存すると表が消える（2026-10-06 に発生）。
  */
-function markdownToEditorHtmlWithLinks(markdown, links) {
+function markdownToEditorHtmlWithLinks(markdown, links, definitions) {
     if (!markdown.trim())
         return "";
     const lexer = new previewMarked.Lexer(previewMarked.defaults);
@@ -195,7 +204,7 @@ function markdownToEditorHtmlWithLinks(markdown, links) {
     for (const token of lexer.lex(markdown)) {
         if (token.type === "table") {
             flush();
-            parts.push(articleBlockElement(withReferenceDefinitions(token.raw.trim(), links)));
+            parts.push(articleBlockElement(withReferenceDefinitions(token.raw.trim(), definitions)));
         }
         else {
             run.push(token);
@@ -216,11 +225,14 @@ export function markdownToEditorHtml(markdown) {
         return "";
     // 参照形式のリンク・画像（`[資料][ref]` と、別の場所に書いた `[ref]: URL`）は、
     // 枠の前後で本文が分かれても解決できるよう、記事全体の定義を先に集めて各部分に渡す。
-    const links = previewMarked.lexer(markdown).links;
+    const articleTokens = previewMarked.lexer(markdown);
+    const links = articleTokens.links;
+    const definitions = collectReferenceDefinitions(articleTokens);
     return splitArticleContent(markdown)
         .map((segment) => {
-        if (segment.kind === "markdown")
-            return markdownToEditorHtmlWithLinks(segment.text, links);
+        if (segment.kind === "markdown") {
+            return markdownToEditorHtmlWithLinks(segment.text, links, definitions);
+        }
         return articleBlockElement(articleBlockSource(segment));
     })
         .join("\n");

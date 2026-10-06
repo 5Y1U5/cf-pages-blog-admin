@@ -324,6 +324,22 @@ describe("見たまま編集と表", () => {
     assert.equal(back.includes("example.com/unused"), false);
   });
 
+  it("表の外の定義は書き直さず原文のまま運ぶ（エスケープや <> 囲みで行き先が変わらない）", async () => {
+    const md = [
+      "| a | b |",
+      "| --- | --- |",
+      "| [一][esc] | [二][space] |",
+      "",
+      "[esc]: https://example.com/a\\\\.b",
+      "[space]: <https://example.com/x y> '単引用の題'",
+    ].join("\n");
+    const back = await htmlToMarkdown(throughEditor(markdownToEditorHtml(md)));
+    const hrefs = (html) => [...html.matchAll(/<a [^>]*>/g)].map((m) => m[0]);
+    // 保存前と保存後で、公開側の HTML のリンクが1文字も変わらない
+    assert.deepEqual(hrefs(markdownToHtml(back)), hrefs(markdownToHtml(md)));
+    assert.equal(back.includes("[esc]: https://example.com/a\\\\.b"), true);
+  });
+
   it("表のカードの原文は、それだけで参照形式のリンクが解決できる", () => {
     const md = ["| a |", "| --- |", "| [説明][ref] |", "", "[ref]: https://example.com/docs"].join("\n");
     const match = /data-source="([^"]*)"/.exec(markdownToEditorHtml(md));
